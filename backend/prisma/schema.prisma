@@ -15,3 +15,53 @@ model User {
 
   @@map("users")
 }
+model Doctor {
+  id           String        @id @default(cuid())
+  name         String
+  crm          String        @unique
+  city         String
+  specialtyId  String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  availability Availability[]
+  appointments Appointment[]
+
+  @@map("doctors")
+}
+
+model Availability {
+  id        String    @id @default(cuid())
+  doctorId  String
+  date      DateTime
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  doctor    Doctor    @relation(fields: [doctorId], references: [id])
+
+  @@map("availabilities")
+}
+
+model Appointment {
+  id          String            @id @default(cuid())
+  protocol    String            @unique @default(cuid())
+  doctorId    String
+  doctor      Doctor            @relation(fields: [doctorId], references: [id])
+  patientName String
+  patientBirth DateTime
+  date        DateTime
+  status      AppointmentStatus @default(SCHEDULED)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@map("appointments")
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}

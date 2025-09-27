@@ -5,6 +5,7 @@ import { PrismaService } from './common/prisma.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { RolesGuard } from './modules/auth/roles/roles.guard';
 import { JwtAuthGuard } from './modules/auth/guards/jwt.guard';
+import { AppointmentsAiModule } from './modules/appointment-ai/ai-orchestrator.module';
 
 @Module({
   imports: [
@@ -17,9 +18,14 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt.guard';
         path: 'login',
         module: AuthModule,
       },
+      {
+        path: 'chat',
+        module: AppointmentsAiModule,
+      },
     ]),
     AuthModule,
     UsersModule,
+    AppointmentsAiModule,
   ],
   controllers: [],
   providers: [
