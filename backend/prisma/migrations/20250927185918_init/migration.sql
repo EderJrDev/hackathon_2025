@@ -2,25 +2,25 @@
 CREATE TYPE "AppointmentStatus" AS ENUM ('SCHEDULED', 'CONFIRMED', 'CANCELLED', 'COMPLETED', 'NO_SHOW');
 
 -- CreateTable
-CREATE TABLE "schedules" (
+CREATE TABLE "ChatSession" (
     "id" TEXT NOT NULL,
-    "title" TEXT NOT NULL,
-    "description" TEXT,
-    "date" TIMESTAMP(3) NOT NULL,
-    "userId" TEXT NOT NULL,
-
-    CONSTRAINT "schedules_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "specialties" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "description" TEXT,
+    "name" TEXT,
+    "dob" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "specialties_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "ChatSession_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Message" (
+    "id" TEXT NOT NULL,
+    "sessionId" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Message_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -30,7 +30,6 @@ CREATE TABLE "doctors" (
     "crm" TEXT NOT NULL,
     "city" TEXT NOT NULL,
     "specialtyId" TEXT NOT NULL,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -41,10 +40,7 @@ CREATE TABLE "doctors" (
 CREATE TABLE "availabilities" (
     "id" TEXT NOT NULL,
     "doctorId" TEXT NOT NULL,
-    "dayOfWeek" INTEGER NOT NULL,
-    "startTime" TEXT NOT NULL,
-    "endTime" TEXT NOT NULL,
-    "duration" INTEGER NOT NULL,
+    "date" TIMESTAMP(3) NOT NULL,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -58,14 +54,9 @@ CREATE TABLE "appointments" (
     "protocol" TEXT NOT NULL,
     "doctorId" TEXT NOT NULL,
     "patientName" TEXT NOT NULL,
-    "patientCpf" TEXT,
-    "patientPhone" TEXT,
-    "patientEmail" TEXT,
+    "patientBirth" TIMESTAMP(3) NOT NULL,
     "date" TIMESTAMP(3) NOT NULL,
-    "startTime" TEXT NOT NULL,
-    "endTime" TEXT NOT NULL,
     "status" "AppointmentStatus" NOT NULL DEFAULT 'SCHEDULED',
-    "notes" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -73,7 +64,7 @@ CREATE TABLE "appointments" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "specialties_name_key" ON "specialties"("name");
+CREATE INDEX "Message_sessionId_createdAt_idx" ON "Message"("sessionId", "createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "doctors_crm_key" ON "doctors"("crm");
@@ -82,7 +73,7 @@ CREATE UNIQUE INDEX "doctors_crm_key" ON "doctors"("crm");
 CREATE UNIQUE INDEX "appointments_protocol_key" ON "appointments"("protocol");
 
 -- AddForeignKey
-ALTER TABLE "doctors" ADD CONSTRAINT "doctors_specialtyId_fkey" FOREIGN KEY ("specialtyId") REFERENCES "specialties"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "Message" ADD CONSTRAINT "Message_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES "ChatSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "availabilities" ADD CONSTRAINT "availabilities_doctorId_fkey" FOREIGN KEY ("doctorId") REFERENCES "doctors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -8,17 +8,12 @@ import { RolesGuard } from './modules/auth/roles/roles.guard';
 import { JwtAuthGuard } from './modules/auth/guards/jwt.guard';
 import { AppointmentsAiModule } from './modules/appointment-ai/ai-orchestrator.module';
 
-// se você usa um barrel em ./modules que exporta só UsersModule, mantenha:
 import { UsersModule } from './modules';
-
-// 👇 IMPORTAÇÃO QUE FALTAVA
-import { ChatModule } from './modules/chat/chat.module';
+import { QuestionsAiModule } from './modules/questions-ai/questions.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    ChatModule, // 👈 agora o símbolo existe
-
     RouterModule.register([
       {
         path: 'users',
@@ -29,14 +24,19 @@ import { ChatModule } from './modules/chat/chat.module';
         module: AuthModule,
       },
       {
-        path: 'chat',
+        path: 'chat/appointment',
         module: AppointmentsAiModule,
+      },
+      {
+        path: 'chat/questions',
+        module: QuestionsAiModule,
       },
     ]),
 
     AuthModule,
     UsersModule,
     AppointmentsAiModule,
+    QuestionsAiModule,
   ],
   controllers: [],
   providers: [

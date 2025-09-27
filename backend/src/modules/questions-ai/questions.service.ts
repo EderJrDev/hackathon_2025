@@ -7,16 +7,16 @@ function parseDob(text: string): Date | null {
   // captura formatos tipo 31/12/1990, 1/1/90 etc.
   const m = text.match(/(\b\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
   if (!m) return null;
-  let [ , d, mo, y ] = m;
+  const [, d, mo, y] = m;
   let year = Number(y);
   if (year < 100) year += 1900 + (year < 50 ? 100 : 0); // heurística 2 dígitos
-  const iso = `${year}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}T00:00:00.000Z`;
+  const iso = `${year}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00.000Z`;
   const dt = new Date(iso);
   return isNaN(dt.getTime()) ? null : dt;
 }
 
 @Injectable()
-export class ChatService {
+export class QuestionsAiService {
   private openai: OpenAI;
   private model: string;
 
@@ -24,7 +24,9 @@ export class ChatService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {
-    this.openai = new OpenAI({ apiKey: this.config.get<string>('OPENAI_API_KEY') });
+    this.openai = new OpenAI({
+      apiKey: this.config.get<string>('OPENAI_API_KEY'),
+    });
     this.model = this.config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini';
   }
 
@@ -74,12 +76,17 @@ export class ChatService {
 
     if (!updatedName) {
       // heurística simples: pega primeira palavra com letra maiúscula (ajuste conforme UI)
-      const nameMatch = message.match(/\b([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\b/);
+      const nameMatch = message.match(
+        /\b([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\b/,
+      );
       if (nameMatch) updatedName = nameMatch[1];
     }
     if (!updatedDob) updatedDob = parseDob(message) || null;
 
-    if (updatedName !== session.name || Number(updatedDob?.getTime() || 0) !== Number(session.dob?.getTime() || 0)) {
+    if (
+      updatedName !== session.name ||
+      Number(updatedDob?.getTime() || 0) !== Number(session.dob?.getTime() || 0)
+    ) {
       await this.prisma.chatSession.update({
         where: { id: sessionId },
         data: { name: updatedName, dob: updatedDob || null },
@@ -104,8 +111,11 @@ export class ChatService {
     const messages = [
       { role: 'system', content: systemPrompt },
       // opcional: inserir um resumo de sessão
-      { role: 'system', content: `Contexto sessão: nome=${updatedName ?? 'desconhecido'}; dob=${updatedDob?.toISOString() ?? 'desconhecida'}` },
-      ...history.map(m => ({ role: m.role as any, content: m.content })),
+      {
+        role: 'system',
+        content: `Contexto sessão: nome=${updatedName ?? 'desconhecido'}; dob=${updatedDob?.toISOString() ?? 'desconhecida'}`,
+      },
+      ...history.map((m) => ({ role: m.role as any, content: m.content })),
     ];
 
     const completion = await this.openai.chat.completions.create({
@@ -114,7 +124,9 @@ export class ChatService {
       temperature: 0.2,
     });
 
-    const assistantText = completion.choices[0]?.message?.content?.trim() || 'Certo. Como posso te ajudar?';
+    const assistantText =
+      completion.choices[0]?.message?.content?.trim() ||
+      'Certo. Como posso te ajudar?';
 
     const saved = await this.prisma.message.create({
       data: { sessionId, role: 'assistant', content: assistantText },

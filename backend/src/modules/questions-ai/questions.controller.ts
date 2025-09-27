@@ -1,14 +1,14 @@
 import { Controller, Post, Body, Get, Param } from '@nestjs/common';
-import { ChatService } from './chat.service';
+import { QuestionsAiService } from './questions.service';
 import { Public } from '../auth/decorators/is-public.decorator'; // ajuste o caminho se precisar
 
 @Public()
 @Controller('chat')
-export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+export class QuestionsAiController {
+  constructor(private readonly chatService: QuestionsAiService) {}
 
   @Public()
-  @Post('start')
+  @Post('')
   start(@Body() dto: any) {
     return this.chatService.startSession(dto);
   }
