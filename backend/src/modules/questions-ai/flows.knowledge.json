@@ -1,0 +1,297 @@
+{
+    "version": "1.0.0",
+    "updatedAt": "2025-09-27",
+    "locale": "pt-BR",
+    "global_policies": {
+      "language": "pt-BR",
+      "tone": "humano-empático",
+      "date_format_in": "DD/MM/YYYY",
+      "timezone": "America/Sao_Paulo",
+      "deny_if_no_context": false,
+      "fallback": "Não encontrei essa informação nos fluxos. Você pode reformular a pergunta ou escolher um tópico: {{suggested_topics}}."
+    },
+    "entities": [],
+    "flows": [
+      {
+        "id": "agendamento_consultas",
+        "title": "Agendamento de Consultas",
+        "intents": [
+          "agendar",
+          "marcar consulta",
+          "marcação",
+          "agenda",
+          "consulta",
+          "como agendar",
+          "como marcar",
+          "quero consultar",
+          "preciso de consulta"
+        ],
+        "patterns": [
+          "(agend|marc).*(consulta)",
+          "como.*(agend|marc).*(consulta)"
+        ],
+        "description": "Guia para marcar consulta ambulatorial.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Perguntas do tipo: como posso agendar uma consulta?",
+          "steps": [
+            "Acesse o portal/app do beneficiário (Uniagende).",
+            "Escolha a **cidade** e a **especialidade** desejadas.",
+            "Verifique os horários disponíveis (até 30 dias).",
+            "Selecione o horário e confirme o agendamento.",
+            "Anote o **protocolo** exibido e verifique as orientações para o dia da consulta."
+          ],
+          "notes": [
+            "Se não houver vagas nos próximos 30 dias, tente outras unidades/especialidades ou datas.",
+            "Leve documento com foto e carteirinha no dia da consulta.",
+            "Para **remarcar/cancelar**, utilize o mesmo caminho informando o protocolo."
+          ],
+          "contact": "Suporte pelo app/portal do beneficiário."
+        },
+        "qa_bank": [
+          {
+            "q": "remarcar",
+            "a": "Claro! Para remarcar, entre no mesmo menu de agendamento, informe o protocolo e escolha um novo horário disponível."
+          },
+          {
+            "q": "sem vagas",
+            "a": "Entendo! Quando não há vagas em 30 dias, vale tentar outras unidades/especialidades, alterar a data ou acompanhar novas aberturas no app."
+          }
+        ],
+        "slot_filling": []
+      },
+      {
+        "id": "segunda_via_boleto",
+        "title": "Segunda Via de Boleto",
+        "intents": [
+          "segunda via",
+          "2ª via",
+          "2 via",
+          "boleto",
+          "boletos",
+          "emitir boleto",
+          "minha fatura venceu",
+          "fatura vencida",
+          "boleto atrasado",
+          "segunda via da fatura",
+          "pagar mensalidade",
+          "imprimir boleto",
+          "baixar boleto"
+        ],
+        "patterns": [
+          "(fatura|boleto).*(venceu|vencid[ao]|atrasad[ao])",
+          "(segunda|2(ª)?).{0,8}via.{0,8}(boleto|fatura)",
+          "emit(ir|o).{0,10}(boleto|fatura)"
+        ],
+        "description": "Como emitir a 2ª via do boleto pelo portal.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Perguntas sobre emissão/baixa de boleto.",
+          "steps": [
+            "Entre no portal do beneficiário e acesse **Financeiro > Boletos**.",
+            "Informe **CPF** ou **código do beneficiário** (quando solicitado).",
+            "Selecione a **competência** (mês) desejada.",
+            "Clique em **Emitir/Download** para obter o PDF atualizado."
+          ],
+          "notes": [
+            "Se estiver **vencido**, o sistema pode recalcular juros/multa automaticamente.",
+            "Caso o boleto não apareça, verifique pendências cadastrais ou tente novamente mais tarde."
+          ],
+          "contact": "Atendimento financeiro pelo portal/app."
+        },
+        "qa_bank": [
+          {
+            "q": "vencido",
+            "a": "Sem problema! Para boleto vencido, gere a 2ª via no portal para sair com valores atualizados."
+          }
+        ],
+        "slot_filling": []
+      },
+      {
+        "id": "troca_titularidade",
+        "title": "Troca de Titularidade",
+        "intents": [
+          "trocar titularidade",
+          "mudança de titular",
+          "alterar titular",
+          "transferir plano",
+          "passar titularidade"
+        ],
+        "patterns": [
+          "(troc|transfer|mudan(c|ç)a).*(titular)"
+        ],
+        "description": "Passo a passo para solicitar a troca de titular do plano.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Perguntas sobre como transferir a titularidade.",
+          "steps": [
+            "Reúna: RG/CPF do titular atual e do novo titular, comprovante de vínculo (se aplicável) e formulário de solicitação.",
+            "Acesse o portal/app e vá em **Atendimento > Solicitações > Troca de Titularidade**.",
+            "Preencha os dados e **anexe** os documentos (PDF/JPG legíveis).",
+            "Envie a solicitação e **anote o protocolo**.",
+            "Acompanhe o status pelo portal; após aprovação, a troca entra em vigor conforme regras contratuais."
+          ],
+          "notes": [
+            "Pode haver análise documental e prazo de processamento.",
+            "Mensalidades pendentes podem impedir a troca até regularização."
+          ],
+          "contact": "Dúvidas pelo canal de atendimento do portal."
+        },
+        "qa_bank": [
+          {
+            "q": "documentos",
+            "a": "Você vai precisar de documento com foto de ambas as partes, comprovante de vínculo (quando necessário) e o formulário assinado."
+          }
+        ],
+        "slot_filling": []
+      },
+      {
+        "id": "plano_maioridade",
+        "title": "Plano de Maioridade",
+        "intents": [
+          "maioridade",
+          "18 anos",
+          "troca de plano maior idade",
+          "mudar de plano aos 18",
+          "plano para maior de idade"
+        ],
+        "patterns": [
+          "(18|dezoito).*(anos|idade)",
+          "maioridad"
+        ],
+        "description": "Orientações para o beneficiário ao atingir a maioridade.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Perguntas sobre mudança de plano aos 18 anos.",
+          "steps": [
+            "Confirme a **data** em que o beneficiário completa 18 anos.",
+            "Consulte as **opções de plano** para a nova faixa etária.",
+            "Separe documentos pessoais (RG/CPF) e comprovante de residência.",
+            "Solicite a alteração pelo portal em **Planos/Produtos > Alteração por Maioridade**.",
+            "Confirme a migração e **anote o protocolo**; acompanhe a vigência da nova adesão."
+          ],
+          "notes": [
+            "Recomendamos solicitar com **30 dias de antecedência** para evitar descontinuidade.",
+            "Valores e carências seguem as regras do novo plano."
+          ],
+          "contact": "Suporte comercial pelo portal/app."
+        },
+        "qa_bank": [],
+        "slot_filling": []
+      },
+      {
+        "id": "solicitacao_autorizacao",
+        "title": "Solicitação de Autorização de Exames",
+        "intents": [
+          "autorizar exame",
+          "autorização",
+          "liberação de exame",
+          "precisa de autorização",
+          "como pedir autorização"
+        ],
+        "patterns": [
+          "(autoriz|libera).*(exame|proced)"
+        ],
+        "description": "Como solicitar autorização de procedimentos e exames.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Perguntas como: preciso de autorização? como solicitar?",
+          "steps": [
+            "Tenha o **pedido médico** legível (PDF/JPG) com CID, CRM, carimbo e assinatura.",
+            "Acesse **Autorização > Nova Solicitação** no portal/app.",
+            "Envie o documento e informe dados básicos do beneficiário.",
+            "O sistema verifica o **Rol de Procedimentos** para ver se precisa de auditoria.",
+            "Se **não precisar**, a autorização é emitida e o **código** fica disponível.",
+            "Se **precisar**, acompanhe pelo portal; prazo médio **48–72h úteis**."
+          ],
+          "notes": [
+            "Arquivos ilegíveis atrapalham a análise; prefira boa qualidade.",
+            "Alguns procedimentos exigem laudos complementares."
+          ],
+          "contact": "Central de autorizações pelo portal/app."
+        },
+        "qa_bank": [
+          { "q": "formatos", "a": "Aceitamos PDF, JPG e PNG para o pedido médico." },
+          { "q": "prazo", "a": "Quando há auditoria, o prazo médio é de 48 a 72 horas úteis." }
+        ],
+        "slot_filling": []
+      },
+      {
+        "id": "cobranca_indevida",
+        "title": "Cobrança Indevida",
+        "intents": [
+          "cobrança indevida",
+          "valor errado",
+          "valor a mais",
+          "contestar cobrança",
+          "estorno",
+          "refaturamento"
+        ],
+        "patterns": [
+          "(cobranc|valor).*(indevid|errad|a mais|duplic)",
+          "contest(ar|a).*(cobranc|valor)"
+        ],
+        "description": "Como abrir contestação de cobrança e acompanhar.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Dúvidas sobre valores cobrados.",
+          "steps": [
+            "Separe o **boleto** e **comprovantes** (pagamento, faturas anteriores, e-mails).",
+            "Acesse **Financeiro > Contestação de Cobrança** no portal/app.",
+            "Descreva o ocorrido, **anexe** os comprovantes e envie.",
+            "Anote o **protocolo** e acompanhe o status.",
+            "Após análise, o setor financeiro responde com **ajuste/estorno** ou orientações."
+          ],
+          "notes": [
+            "Enquanto a análise ocorre, evite pagar valores em duplicidade.",
+            "Se houver cobrança automática, acompanhe a regularização no ciclo seguinte."
+          ],
+          "contact": "Suporte financeiro pelo portal/app."
+        },
+        "qa_bank": [],
+        "slot_filling": []
+      },
+      {
+        "id": "atualizacao_cadastral",
+        "title": "Atualização Cadastral",
+        "intents": [
+          "atualizar cadastro",
+          "alterar dados",
+          "mudança de endereço",
+          "trocar email",
+          "trocar telefone",
+          "corrigir cadastro"
+        ],
+        "patterns": [
+          "(atualiz|alter|corrig).*(cadastro|dados)",
+          "mudan(c|ç)a.*(endereco|endereço)"
+        ],
+        "description": "Como atualizar dados de cadastro do beneficiário.",
+        "behavior": { "mode": "guide" },
+        "guide": {
+          "when_to_use": "Perguntas sobre alterar dados pessoais/contato.",
+          "steps": [
+            "Entre no portal/app e acesse **Meu Cadastro**.",
+            "Atualize os campos necessários (endereço, telefone, e-mail, estado civil, dependentes).",
+            "Quando solicitado, **anexe** comprovantes (ex.: comprovante de residência).",
+            "Revise as alterações e **salve**.",
+            "Acompanhe a confirmação no portal ou por e-mail."
+          ],
+          "notes": [
+            "Mantenha contatos atualizados para receber notificações e autorizações.",
+            "Algumas alterações podem exigir análise documental."
+          ],
+          "contact": "Atendimento cadastral pelo portal/app."
+        },
+        "qa_bank": [],
+        "slot_filling": []
+      }
+    ],
+    "routing": {
+      "intent_detection": "keywords+semantic",
+      "disambiguation": {
+        "message": "Encontrei mais de um fluxo possível: {{candidatos}}. Qual deles você deseja?"
+      }
+    }
+  }
+  

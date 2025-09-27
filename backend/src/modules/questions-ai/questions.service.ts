@@ -1,158 +1,68 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../common/prisma.service';
-import OpenAI from 'openai';
+import { Injectable } from '@nestjs/common';
+import { FlowsKnowledgeService } from './flows-knowledge.service';
+import type { FlowDef } from './flows.types';
 
-function parseDob(text: string): Date | null {
-  // captura formatos tipo 31/12/1990, 1/1/90 etc.
-  const m = text.match(/(\b\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (!m) return null;
-  const [, d, mo, y] = m;
-  let year = Number(y);
-  if (year < 100) year += 1900 + (year < 50 ? 100 : 0); // heurística 2 dígitos
-  const iso = `${year}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}T00:00:00.000Z`;
-  const dt = new Date(iso);
-  return isNaN(dt.getTime()) ? null : dt;
-}
+type AskInput = { sessionId?: string; text: string; context?: Record<string, any> };
+type AskOutput = { reply: string; flowId?: string; done?: boolean };
 
 @Injectable()
-export class QuestionsAiService {
-  private openai: OpenAI;
-  private model: string;
+export class QuestionsService {
+  constructor(private readonly flows: FlowsKnowledgeService) {}
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
-  ) {
-    this.openai = new OpenAI({
-      apiKey: this.config.get<string>('OPENAI_API_KEY'),
-    });
-    this.model = this.config.get<string>('OPENAI_MODEL') || 'gpt-4o-mini';
-  }
-
-  async startSession(dto: { name?: string; dob?: string }) {
-    const dobDate = dto.dob ? parseDob(dto.dob) : null;
-
-    const session = await this.prisma.chatSession.create({
-      data: {
-        name: dto.name || null,
-        dob: dobDate,
-        messages: {
-          create: [
-            {
-              role: 'assistant',
-              content:
-                dto.name && dobDate
-                  ? `Olá, ${dto.name}! Dados recebidos. Como posso ajudar hoje no chat de dúvidas?`
-                  : 'Olá! Para começar, por favor, me informe seu nome e sua data de nascimento (ex.: 25/08/1983).',
-            },
-          ],
-        },
-      },
-      include: { messages: true },
-    });
-
-    return {
-      sessionId: session.id,
-      firstMessage: session.messages[0],
-    };
-  }
-
-  async handleMessage(sessionId: string, message: string) {
-    const session = await this.prisma.chatSession.findUnique({
-      where: { id: sessionId },
-      include: { messages: { orderBy: { createdAt: 'asc' } } },
-    });
-    if (!session) throw new BadRequestException('Sessão não encontrada');
-
-    // grava a mensagem do usuário
-    await this.prisma.message.create({
-      data: { sessionId, role: 'user', content: message },
-    });
-
-    // se ainda não temos nome/dob, tentar extrair agora
-    let updatedName = session.name;
-    let updatedDob = session.dob;
-
-    if (!updatedName) {
-      // heurística simples: pega primeira palavra com letra maiúscula (ajuste conforme UI)
-      const nameMatch = message.match(
-        /\b([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)\b/,
-      );
-      if (nameMatch) updatedName = nameMatch[1];
-    }
-    if (!updatedDob) updatedDob = parseDob(message) || null;
-
-    if (
-      updatedName !== session.name ||
-      Number(updatedDob?.getTime() || 0) !== Number(session.dob?.getTime() || 0)
-    ) {
-      await this.prisma.chatSession.update({
-        where: { id: sessionId },
-        data: { name: updatedName, dob: updatedDob || null },
-      });
+  // ===== Helpers =====
+  private friendlyGreeting(text: string) {
+    const t = (text || '').toLowerCase();
+    if (/(oi|ol[aá]|boa (tarde|noite|dia))/.test(t)) return 'Oi! ';
+    return '';
     }
 
-    // Prompt do "chat aberto de tira-dúvidas" — por enquanto, sem RAG
-    // (depois conectamos ao RAG dos fluxos)
-    const systemPrompt = [
-      'Você é um atendente objetivo e didático do chat institucional.',
-      'Comece confirmando nome e data de nascimento caso ainda não constem.',
-      'Responda de forma curta e clara.',
-      'Se a pergunta for sobre agendamento ou autorização, oriente que há fluxos específicos (ainda não habilitados nesta versão).',
-    ].join(' ');
+  private formatGuide(flow: FlowDef) {
+    const g = (flow as any).guide as
+      | { steps: string[]; notes?: string[]; contact?: string; when_to_use?: string }
+      | undefined;
+    if (!g || !g.steps?.length) return null;
 
-    const history = await this.prisma.message.findMany({
-      where: { sessionId },
-      orderBy: { createdAt: 'asc' },
-      take: 12, // janelinha de contexto
-    });
+    const steps = g.steps.map((s, i) => `${i + 1}. ${s}`).join('\n');
+    const notes = g.notes?.length ? `\n\nObservações:\n- ${g.notes.join('\n- ')}` : '';
+    const contact = g.contact ? `\n\nSe precisar de uma mãozinha, fale com: ${g.contact}` : '';
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      // opcional: inserir um resumo de sessão
-      {
-        role: 'system',
-        content: `Contexto sessão: nome=${updatedName ?? 'desconhecido'}; dob=${updatedDob?.toISOString() ?? 'desconhecida'}`,
-      },
-      ...history.map((m) => ({ role: m.role as any, content: m.content })),
-    ];
-
-    const completion = await this.openai.chat.completions.create({
-      model: this.model,
-      messages: messages as any,
-      temperature: 0.2,
-    });
-
-    const assistantText =
-      completion.choices[0]?.message?.content?.trim() ||
-      'Certo. Como posso te ajudar?';
-
-    const saved = await this.prisma.message.create({
-      data: { sessionId, role: 'assistant', content: assistantText },
-    });
-
-    return {
-      reply: saved.content,
-      nameCaptured: updatedName || null,
-      dobCaptured: updatedDob ? updatedDob.toISOString().split('T')[0] : null,
-    };
+    return `Claro! Vou te explicar o passo a passo de **${flow.title}**:\n\n${steps}${notes}${contact}`;
   }
 
-  async getHistory(sessionId: string) {
-    const session = await this.prisma.chatSession.findUnique({
-      where: { id: sessionId },
-      include: { messages: { orderBy: { createdAt: 'asc' } } },
-    });
-    if (!session) throw new BadRequestException('Sessão não encontrada');
+  private matchQa(text: string, flow: FlowDef) {
+    const qa = flow.qa_bank || [];
+    const t = (text || '').toLowerCase();
+    return qa.find((item) => t.includes((item.q || '').toLowerCase()));
+  }
+
+  // ===== Entrada principal consumida pelo controller =====
+  async ask({ text }: AskInput): Promise<AskOutput> {
+    const greeting = this.friendlyGreeting(text);
+
+    // 1) Escolher o fluxo mais provável a partir do texto livre
+    const flow = this.flows.findFlowByIntent(text);
+    if (!flow) {
+      const topics = this.flows.getAll().flows.map((f) => f.title).join(', ');
+      return {
+        reply: `${greeting}Desculpa, não consegui identificar o tema de cara. Posso ajudar com: ${topics}. Me diga em poucas palavras o que você precisa, tipo “minha fatura venceu” ou “como agendar consulta”.`,
+      };
+    }
+
+    // 2) Se tiver guia, respondemos de forma humana e direta
+    const guide = this.formatGuide(flow);
+    if (guide) {
+      return { reply: `${greeting}${guide}`, flowId: flow.id, done: true };
+    }
+
+    // 3) Caso não haja guia, tentar Q&A
+    const qa = this.matchQa(text, flow);
+    if (qa) return { reply: `${greeting}${qa.a}`, flowId: flow.id, done: true };
+
+    // 4) Fallback amigável
     return {
-      session: {
-        id: session.id,
-        name: session.name,
-        dob: session.dob,
-        createdAt: session.createdAt,
-      },
-      messages: session.messages,
+      reply: `${greeting}Posso te orientar sobre **${flow.title}**. Se quiser, me pergunte “como fazer” que eu te passo o passo a passo.`,
+      flowId: flow.id,
+      done: true,
     };
   }
 }

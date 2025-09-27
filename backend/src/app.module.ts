@@ -9,10 +9,11 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt.guard';
 import { AppointmentsAiModule } from './modules/appointment-ai/ai-orchestrator.module';
 
 import { UsersModule } from './modules';
-import { QuestionsAiModule } from './modules/questions-ai/questions.module';
+import { QuestionsAiModule } from './modules/questions-ai/questions-ai.module';
 
 @Module({
   imports: [
+    QuestionsAiModule,
     ConfigModule.forRoot({ isGlobal: true }),
     RouterModule.register([
       {
