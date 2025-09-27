@@ -12,7 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 
-import { startChat, sendMessage } from '../lib/chatApi';
+import { startChat } from '../lib/chatApi';
 
 type Sender = 'user' | 'bot';
 
@@ -23,7 +23,6 @@ interface UiMessage {
 }
 
 export default function Chat() {
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,29 +33,16 @@ export default function Chat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // inicia sessão ao montar
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await startChat();
-        setSessionId(res.sessionId);
-        setMessages([{ sender: 'bot', text: res.firstMessage.content }]);
-      } catch (err) {
-        console.error(err);
-        setMessages([{ sender: 'bot', text: 'Falha ao iniciar o chat.' }]);
-      }
-    })();
-  }, []);
-
   async function handleSend() {
-    if (!sessionId || !input.trim() || loading) return;
+    if (!input.trim() || loading) return;
     const text = input.trim();
 
     setMessages(prev => [...prev, { sender: 'user', text }]);
     setInput('');
     setLoading(true);
     try {
-      const res = await sendMessage(sessionId, text);
+      // Backend só precisa do texto
+      const res = await startChat({ text });
       setMessages(prev => [...prev, { sender: 'bot', text: res.reply || '...' }]);
     } catch (err) {
       console.error(err);
@@ -157,7 +143,7 @@ export default function Chat() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={loading ? 'Aguarde...' : 'Digite sua mensagem...'}
-              disabled={loading || !sessionId}
+              disabled={loading}
               className="w-full p-2 bg-transparent focus:outline-none text-gray-900 dark:text-white disabled:opacity-60"
             />
 
@@ -171,7 +157,7 @@ export default function Chat() {
 
             <button
               onClick={handleSend}
-              disabled={loading || !sessionId || !input.trim()}
+              disabled={loading || !input.trim()}
               className="p-2 bg-green-500 text-white rounded-full hover:bg-green-600 disabled:bg-green-300"
               title="Enviar"
             >
