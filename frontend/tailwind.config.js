@@ -8,7 +8,7 @@ module.exports = {
     extend: {
       colors: {
         unimed: {
-          green: '#00a859',
+          green: '#00A86E',
           yellow: '#f7d117',
         },
       },

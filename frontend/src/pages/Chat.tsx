@@ -1,9 +1,21 @@
 import { useState, useRef, useEffect } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { KeyboardEvent, ChangeEvent } from 'react'
+import {
+  Paperclip,
+  Mic,
+  ThumbsUp,
+  ThumbsDown,
+  RefreshCw,
+  Share2,
+  Copy,
+  MoreHorizontal,
+  Sparkles,
+} from 'lucide-react'
 
 interface Message {
   sender: 'user' | 'bot'
-  text: string
+  text?: string
+  imageUrl?: string
 }
 
 export default function Chat() {
@@ -23,7 +35,10 @@ export default function Chat() {
     setTimeout(() => {
       setMessages((prev) => [
         ...prev,
-        { sender: 'bot', text: 'Esta é uma resposta simulada.' },
+        {
+          sender: 'bot',
+          text: 'Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industrys standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.',
+        },
       ])
     }, 500)
   }
@@ -35,63 +50,115 @@ export default function Chat() {
     }
   }
 
+  function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) {
+      const imageUrl = URL.createObjectURL(file)
+      setMessages((prev) => [...prev, { sender: 'user', imageUrl }])
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-      {messages.length === 0 ? (
-        <div className="flex-1 flex flex-col justify-center items-center">
-          <h1 className="text-4xl font-bold">Como a Unimed pode te ajudar hoje?</h1>
-        </div>
-      ) : (
-        <div className="flex-1 overflow-auto p-4 space-y-4">
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={
-                m.sender === 'user' ? 'flex justify-end' : 'flex justify-start'
-              }
-            >
+    <div className="flex flex-col h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+      <div className="flex-1 overflow-auto p-4 md:px-96">
+        {messages.length === 0 ? (
+          <div className="flex-1 flex flex-col justify-center items-center h-full">
+            <h1 className="text-4xl font-bold">Como podemos te ajudar hoje?</h1>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {messages.map((m, i) => (
               <div
-                className={`max-w-[80%] p-3 rounded-lg break-words ` +
-                  (m.sender === 'user'
-                    ? 'bg-unimed-green text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100')}
+                key={i}
+                className={`flex ${
+                  m.sender === 'user' ? 'justify-end' : 'justify-start'
+                }`}
               >
-                {m.text}
+                <div
+                  className={`flex flex-col ${
+                    m.sender === 'user' ? 'items-end' : 'items-start'
+                  }`}
+                >
+                  {m.text && (
+                    <div
+                      className={`w-full max-w-[95%] p-3 rounded-lg break-words ${
+                        m.sender === 'user'
+                          ? 'bg-green-500 text-white rounded-br-none'
+                          : 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none'
+                      }`}
+                    >
+                      {m.text}
+                    </div>
+                  )}
+                  {m.imageUrl && (
+                    <img
+                      src={m.imageUrl}
+                      alt="Uploaded"
+                      className="max-w-[90%] rounded-lg mt-2"
+                    />
+                  )}
+                  {m.sender === 'bot' && (
+                    <div className="flex space-x-2 mt-2">
+                      <ThumbsUp className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                      <ThumbsDown className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                      <RefreshCw className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                      <Share2 className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                      <Copy className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                      <MoreHorizontal className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                      <Sparkles className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
-      )}
-      <div className="p-4">
-        <div className="relative max-w-2xl mx-auto">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything..."
-            className="w-full p-4 pl-12 border border-gray-300 dark:border-gray-600 rounded-full bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-unimed-green"
-          />
-          <button
-            onClick={sendMessage}
-            className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-unimed-green text-white rounded-full hover:bg-unimed-green/80"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 10l7-7m0 0l7 7m-7-7v18"
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        )}
+      </div>
+      <div className="p-4 md:px-96">
+        <div className="relative max-w-4xl mx-auto">
+          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-2">
+            <label className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer">
+              <Paperclip className="h-6 w-6" />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
               />
-            </svg>
-          </button>
+            </label>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Peça ao Gemini"
+              className="w-full p-2 bg-transparent focus:outline-none text-gray-900 dark:text-white"
+            />
+            <button className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
+              <Mic className="h-6 w-6" />
+            </button>
+            <button
+              onClick={sendMessage}
+              className="p-2 bg-green-500 text-white rounded-full hover:bg-green-600 disabled:bg-green-300"
+              disabled={!input.trim()}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 12h14M12 5l7 7-7 7"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
