@@ -19,34 +19,41 @@ interface Message {
 }
 
 export default function Chat() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const bottomRef = useRef<HTMLDivElement | null>(null)
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    (async () => {
+      try {
+        const res = await startChat();
+        setSessionId(res.sessionId);
+        setMessages([{ sender: 'bot', text: res.firstMessage.content }]);
+      } catch (err) {
+        console.error(err);
+        setMessages([{ sender: 'bot', text: 'Falha ao iniciar o chat.' }]);
+      }
+    })();
+  }, []);
 
-  function sendMessage() {
-    const text = input.trim()
-    if (!text) return
-    setMessages((prev) => [...prev, { sender: 'user', text }])
-    setInput('')
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          sender: 'bot',
-          text: 'Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industrys standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.',
-        },
-      ])
-    }, 500)
-  }
-
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      sendMessage()
+  async function handleSend() {
+    if (!sessionId || !input.trim()) return;
+    const text = input.trim();
+    setMessages(prev => [...prev, { sender: 'user', text }]);
+    setInput('');
+    setLoading(true);
+    try {
+      const res = await sendMessage(sessionId, text);
+      setMessages(prev => [...prev, { sender: 'bot', text: res.reply }]);
+    } catch (err) {
+      console.error(err);
+      setMessages(prev => [...prev, { sender: 'bot', text: 'Erro ao responder.' }]);
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -59,6 +66,28 @@ export default function Chat() {
   }
 
   return (
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        {messages.map((m, i) => (
+          <div key={i} className={m.sender === 'user' ? 'text-right' : 'text-left'}>
+            <div className={`inline-block p-3 rounded-lg ${m.sender === 'user' ? 'bg-green-600 text-white' : 'bg-gray-200'}`}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+      <div className="p-4 flex gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
+          placeholder="Digite sua mensagem..."
+          className="flex-1 border rounded px-3 py-2"
+        />
+        <button onClick={handleSend} disabled={loading} className="bg-green-600 text-white px-4 py-2 rounded">
+          Enviar
+        </button>
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
       <div className="flex-1 overflow-auto p-4 md:px-96">
         {messages.length === 0 ? (
@@ -162,5 +191,5 @@ export default function Chat() {
         </div>
       </div>
     </div>
-  )
+  );
 }

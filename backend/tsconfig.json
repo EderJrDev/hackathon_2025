@@ -6,16 +6,21 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "target": "ES2021",
+    "target": "es2017",
     "sourceMap": true,
+    "rootDir": "./",
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
+    "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "include": ["src/**/*.ts"],           // ✅ só o código do backend
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts", "../frontend/**"]
 }
