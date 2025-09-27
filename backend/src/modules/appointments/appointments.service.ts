@@ -14,6 +14,7 @@ export class AppointmentsService {
   async listDoctorsBySpecialtyCity(specialtyId: string, city: string) {
     if (!specialtyId || !city)
       throw new BadRequestException('specialtyId e city são obrigatórios');
+
     return this.prisma.doctor.findMany({
       where: {
         specialtyId,
@@ -31,8 +32,23 @@ export class AppointmentsService {
   }
 
   async listAvailabilityByDoctor(doctorId: string, start?: Date, end?: Date) {
+    // Janela padrão de 30 dias a partir de "agora"
     const s = start ?? new Date();
-    const e = end ?? new Date(new Date(s).setMonth(s.getMonth() + 1));
+    const e =
+      end ??
+      new Date(
+        s.getFullYear(),
+        s.getMonth(),
+        s.getDate() + 30,
+        s.getHours(),
+        s.getMinutes(),
+        s.getSeconds(),
+        s.getMilliseconds(),
+      );
+
+    // IMPORTANTE: Armazenamos DateTime no banco (UTC). A exibição correta
+    // (pt-BR, America/Sao_Paulo) é feita na orquestração (toLocaleString com timeZone).
+    // Aqui mantemos os Date como UTC “crus”, sem converter para string local.
     return this.prisma.availability.findMany({
       where: { doctorId, isActive: true, date: { gte: s, lt: e } },
       orderBy: { date: 'asc' },
@@ -43,8 +59,8 @@ export class AppointmentsService {
   async createAppointmentFromAvailability(params: {
     availabilityId: string;
     doctorId: string;
-    patientName: string;
-    patientBirth: Date;
+    patientName: string; // **nome limpo** (apenas o nome)
+    patientBirth: Date; // **Date** criado a partir de YYYY-MM-DD (ISO) vindo do orquestrador
   }) {
     return this.prisma.$transaction(async (tx) => {
       const avail = await tx.availability.findUnique({
@@ -59,16 +75,16 @@ export class AppointmentsService {
       const appt = await tx.appointment.create({
         data: {
           doctorId: avail.doctorId,
-          patientName: params.patientName,
-          patientBirth: params.patientBirth,
-          date: avail.date,
-          status: AppointmentStatus.CONFIRMED, // confirme direto conforme seu fluxo
+          patientName: params.patientName, // grava apenas o nome
+          patientBirth: params.patientBirth, // Date correto
+          date: avail.date, // DateTime do slot (UTC no banco)
+          status: AppointmentStatus.CONFIRMED, // conforme fluxo
         },
         select: { id: true, protocol: true, status: true, date: true },
       });
 
       await tx.availability.delete({ where: { id: avail.id } });
-      return appt; // { protocol, status, date, id }
+      return appt;
     });
   }
 }
