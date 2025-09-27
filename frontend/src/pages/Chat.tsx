@@ -83,9 +83,9 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+    <div className="flex flex-col h-full min-h-0 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
       {/* área de mensagens */}
-      <div className="flex-1 overflow-auto p-4 md:px-96">
+      <div className="flex-1 overflow-auto p-4">
         {messages.length === 0 ? (
           <div className="flex-1 flex flex-col justify-center items-center h-full">
             <h1 className="text-4xl font-bold">Como podemos te ajudar hoje?</h1>
@@ -138,8 +138,8 @@ export default function Chat() {
       </div>
 
       {/* input */}
-      <div className="p-4 md:px-96">
-        <div className="relative max-w-4xl mx-auto">
+      <div className="p-3 sm:p-4">
+        <div className="relative w-full">
           <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-2">
             <label className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer">
               <Paperclip className="h-6 w-6" />

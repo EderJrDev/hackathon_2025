@@ -1,5 +1,6 @@
 import React, { useState, FC } from 'react';
 import logoUnimed from '../src/assets/logo-unimed.png';
+import Chat from './pages/Chat';
 
 // --- Ícones estilo Lucide ---
 // Para manter tudo em um único arquivo, os ícones são definidos como componentes SVG aqui.
@@ -252,9 +253,12 @@ const FloatingWidgets = () => (
             </button>
         </div>
         <div className="fixed bottom-6 right-6 z-40">
-            <button className="bg-green-500 p-4 text-white rounded-full shadow-lg hover:bg-green-600 transform hover:scale-110 transition-transform">
+          <div className="relative">
+            <div className="absolute inset-0 rounded-full bg-green-300 opacity-75 animate-ping"></div>
+            <button className="relative bg-green-500 p-4 text-white rounded-full shadow-lg hover:bg-green-600 transform hover:scale-110 transition-transform">
                 <Bot className="w-8 h-8"/>
             </button>
+          </div>
         </div>
     </>
 );
@@ -262,6 +266,8 @@ const FloatingWidgets = () => (
 
 // --- Componente Principal da Página ---
 const App: FC = () => {
+  const [isChatOpen, setIsChatOpen] = useState(false);
+
   return (
     <div className="bg-gray-50 font-sans">
       <HeaderTop />
@@ -273,6 +279,37 @@ const App: FC = () => {
       </main>
       <CookieConsent />
       <FloatingWidgets />
+
+      {/* Botão para abrir o chat */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <div className="relative">
+          <div className="absolute inset-0 rounded-full bg-green-300 opacity-75 animate-ping"></div>
+          <button
+            className="relative bg-green-500 p-4 text-white rounded-full shadow-lg hover:bg-green-600 transform hover:scale-110 transition-transform"
+            onClick={() => setIsChatOpen(true)}
+          >
+            <Bot className="w-8 h-8" />
+          </button>
+        </div>
+      </div>
+
+      {/* Modal do chat */}
+      {isChatOpen && (
+        <div className="fixed bottom-0 right-0 w-full md:w-1/3 h-3/4 bg-white shadow-lg rounded-t-lg overflow-hidden z-50 flex flex-col">
+          <div className="flex justify-between items-center p-4 bg-green-500 text-white flex-shrink-0">
+            <h2 className="text-lg font-bold">Chat</h2>
+            <button
+              className="text-white hover:text-gray-200 text-2xl font-bold"
+              onClick={() => setIsChatOpen(false)}
+            >
+              &times;
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <Chat />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
