@@ -321,4 +321,37 @@ export class ExamsAuthService {
       protocolBatch,
     };
   }
+
+  /**
+   * Busca autorizações de exames por nome do paciente (case-insensitive) e data de nascimento.
+   * Retorna somente protocolo e status conforme requisito.
+   */
+  async findAuthorizationsByPatient(name: string, birthDate: string) {
+    const normalized = this.normalizeDate(birthDate);
+    if (!normalized) {
+      throw new BadRequestException(
+        'Data de nascimento inválida. Use DD/MM/AAAA ou AAAA-MM-DD',
+      );
+    }
+
+    const dateObj = new Date(normalized);
+    // Ignorar parte de hora comparando somente a data (UTC vs local). Como persistimos Date sem hora relevante,
+    // compararemos intervalo do dia.
+    const start = new Date(dateObj);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dateObj);
+    end.setHours(23, 59, 59, 999);
+
+    const results = await this.prisma.examAuthorization.findMany({
+      where: {
+        pacientName: { equals: name, mode: 'insensitive' },
+        pacientBirth: { gte: start, lte: end },
+      },
+      select: { protocol: true, status: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50, // pequena salvaguarda
+    });
+
+    return results.map((r) => ({ protocol: r.protocol, status: r.status }));
+  }
 }

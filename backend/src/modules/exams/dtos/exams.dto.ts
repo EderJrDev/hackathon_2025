@@ -64,3 +64,9 @@ export class AuthorizeResponseDTO {
   source: 'gpt-json+db';
   protocolBatch?: string; // Protocolo geral do arquivo (opcional caso queira um único para todo upload)
 }
+
+// DTO para consulta de autorizações existentes por paciente
+export class ExamAuthorizationStatusDTO {
+  protocol: string;
+  status: string; // AuthorizationStatus enum (mantido como string para simplificar retorno)
+}
