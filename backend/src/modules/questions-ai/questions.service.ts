@@ -1,84 +1,272 @@
-import { Injectable } from '@nestjs/common';
-import { FlowsKnowledgeService } from './flows-knowledge.service';
-import type { FlowDef } from './flows.types';
+import { Injectable, Inject } from '@nestjs/common';
+import type OpenAI from 'openai';
+import { OPENAI_PROVIDER } from './openai.provider';
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 
-type AskInput = {
-  sessionId?: string;
-  text: string;
-  context?: Record<string, any>;
+// -------------------- Tipos auxiliares --------------------
+type InputDto = { message: string };
+
+type FlowGuide = {
+  steps_html?: string; // já em <li>...</li>
+  obs_html?: string;   // já em <li>...</li>
+  steps?: string;      // texto/markdown (fallback)
+  obs?: string;        // texto/markdown (fallback)
 };
-type AskOutput = { reply: string; flowId?: string; done?: boolean };
 
+type FlowItem = {
+  key: string;
+  title?: string;
+  intents?: string[];
+  patterns?: string[];
+  guide?: FlowGuide;
+};
+
+type NormalizedFlows = {
+  items: FlowItem[];
+};
+
+// -------------------- Prompt de sistema --------------------
+const SYSTEM_PROMPT_HTML = `
+Você é uma atendente humana chamada Ana.
+Responda SEMPRE em HTML (sem Markdown), usando <section>, <h2>, <p>, <ol>, <ul>, <li>, <strong>.
+Tom empático, claro e objetivo (pt-BR). Nunca peça dados pessoais; apenas explique “como fazer”.
+
+Quando houver um assunto/fluxo reconhecido, responda exatamente neste formato:
+<section style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.55;color:#0f172a">
+  <h2 style="margin:0 0 8px">{{TITULO}}</h2>
+  <ol style="margin:0 0 8px 18px">{{PASSOS_HTML}}</ol>
+  <p style="margin:0 0 6px"><strong>Observações</strong></p>
+  <ul style="margin:0 0 8px 18px">{{OBS_HTML}}</ul>
+  <p style="margin:0;font-size:13px;color:#64748b">Precisa de ajuda com algum passo?</p>
+</section>
+
+Se NÃO houver fluxo específico, responda com uma saudação e a lista curta de assuntos:
+<section style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.55;color:#0f172a">
+  <p style="margin:0 0 8px"><strong>{{SAUDACAO}}</strong> 😊 Eu sou a Ana, posso te orientar passo a passo. Sobre qual assunto você precisa?</p>
+  <p style="margin:8px 0 6px;font-size:13px;color:#475569">Posso orientar com:</p>
+  <ul style="margin:0 0 8px 18px">{{TOPICOS_HTML}}</ul>
+  <p style="margin:0;font-size:13px;color:#64748b">Pode escrever, por exemplo: “como agendar consulta” ou “preciso da 2ª via do boleto”.</p>
+</section>
+
+Regras:
+- Se receber STEPS_HTML/OBS_HTML, use como está. Se vier apenas STEPS/OBS em texto, converta para <li>…</li>.
+- NUNCA devolva nada fora de HTML.
+`;
+
+// -------------------- Utilitários --------------------
+function saudacaoBR(date = new Date()) {
+  const hora = Number(
+    new Intl.DateTimeFormat('pt-BR', {
+      hour: 'numeric',
+      hour12: false,
+      timeZone: 'America/Sao_Paulo',
+    }).format(date),
+  );
+  if (hora < 12) return 'Bom dia, tudo bem?';
+  if (hora < 18) return 'Boa tarde, tudo bem?';
+  return 'Boa noite, tudo bem?';
+}
+
+function normalizeFlows(raw: any): NormalizedFlows {
+  // Aceita formatos: { items: [...] }, { flows: [...] } ou diretamente [...]
+  const list: any[] = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.items)
+    ? raw.items
+    : Array.isArray(raw?.flows)
+    ? raw.flows
+    : [];
+
+  // Garante a presença de "key" (usando id, quando existir)
+  const items: FlowItem[] = list.map((it) => ({
+    key: (it.key ?? it.id ?? '').toString(),
+    title: it.title,
+    intents: it.intents,
+    patterns: it.patterns,
+    guide: it.guide,
+  }));
+
+  return { items };
+}
+
+function topicsList(items: FlowItem[]): string[] {
+  return items.map((i) => i.title || i.key).slice(0, 12);
+}
+
+function tryMatchFlow(q: string, items: FlowItem[]): FlowItem | null {
+  const text = (q || '').toLowerCase().trim();
+
+  // 1) intents (match por inclusão)
+  for (const it of items) {
+    if (it.intents?.some((intent) => text.includes(intent.toLowerCase()))) {
+      return it;
+    }
+  }
+
+  // 2) patterns (regex)
+  for (const it of items) {
+    if (
+      it.patterns?.some((p) => {
+        try {
+          return new RegExp(p, 'i').test(text);
+        } catch {
+          return false;
+        }
+      })
+    ) {
+      return it;
+    }
+  }
+
+  // 3) heurística simples: palavras-chave por título
+  for (const it of items) {
+    const t = (it.title || it.key || '').toLowerCase();
+    if (t && text.includes(t)) return it;
+  }
+
+  return null;
+}
+
+// -------------------- Carregar JSON sem resolveJsonModule --------------------
+// OBS: para produção, garanta que o JSON seja copiado para a pasta dist.
+// No Nest, adicione em "nest-cli.json":
+// {
+//   "compilerOptions": {
+//     "assets": [{ "include": "**/*.json", "outDir": "dist" }],
+//     "watchAssets": true
+//   }
+// }
+function loadFlowsJson(): any {
+  const candidates = [
+    // quando compilado (dist)
+    join(__dirname, 'flows.knowledge.json'),
+    // quando rodando com ts-node na árvore de src
+    join(process.cwd(), 'src/modules/questions-ai/flows.knowledge.json'),
+    // alternativa comum (monorepo/backends)
+    join(process.cwd(), 'backend/src/modules/questions-ai/flows.knowledge.json'),
+    // fallback: dist em subpasta
+    join(process.cwd(), 'dist/modules/questions-ai/flows.knowledge.json'),
+  ];
+
+  for (const p of candidates) {
+    try {
+      if (existsSync(p)) {
+        const raw = readFileSync(p, 'utf8');
+        return JSON.parse(raw);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // Se não achar, retorne estrutura vazia (evita crash)
+  return { items: [] };
+}
+
+// -------------------- Service --------------------
 @Injectable()
 export class QuestionsService {
-  constructor(private readonly flows: FlowsKnowledgeService) {}
+  private readonly flows: NormalizedFlows;
 
-  // ===== Helpers =====
-  private friendlyGreeting(text: string) {
-    const t = (text || '').toLowerCase();
-    if (/(oi|ol[aá]|boa (tarde|noite|dia))/.test(t)) return 'Oi! ';
-    return '';
+  constructor(@Inject(OPENAI_PROVIDER) private readonly openai: OpenAI) {
+    this.flows = normalizeFlows(loadFlowsJson());
   }
 
-  private formatGuide(flow: FlowDef) {
-    const g = (flow as any).guide as
-      | {
-          steps: string[];
-          notes?: string[];
-          contact?: string;
-          when_to_use?: string;
-        }
-      | undefined;
-    if (!g || !g.steps?.length) return null;
+  /**
+   * Recebe a mensagem do usuário, tenta identificar um fluxo correspondente
+   * e chama a IA para formatar a resposta em HTML com tom de atendente.
+   */
+  async ask(dto: InputDto): Promise<string> {
+    const assunto = (dto?.message ?? '').trim();
+    const items = this.flows.items || [];
+    const matched = tryMatchFlow(assunto, items);
+    const saud = saudacaoBR();
 
-    const steps = g.steps.map((s, i) => `${i + 1}. ${s}`).join('\n');
-    const notes = g.notes?.length
-      ? `\n\nObservações:\n- ${g.notes.join('\n- ')}`
-      : '';
-    const contact = g.contact
-      ? `\n\nSe precisar de uma mãozinha, fale com: ${g.contact}`
-      : '';
+    const ctx: string[] = [`SAUDACAO=${saud}`];
 
-    return `Claro! Vou te explicar o passo a passo de **${flow.title}**:\n\n${steps}${notes}${contact}`;
-  }
+    if (matched) {
+      const title = matched.title || matched.key;
 
-  private matchQa(text: string, flow: FlowDef) {
-    const qa = flow.qa_bank || [];
-    const t = (text || '').toLowerCase();
-    return qa.find((item) => t.includes((item.q || '').toLowerCase()));
-  }
+      const stepsHtml = matched.guide?.steps_html?.trim();
+      const obsHtml = matched.guide?.obs_html?.trim();
+      const stepsTxt = matched.guide?.steps?.trim();
+      const obsTxt = matched.guide?.obs?.trim();
 
-  // ===== Entrada principal consumida pelo controller =====
-  async ask({ text }: AskInput): Promise<AskOutput> {
-    const greeting = this.friendlyGreeting(text);
-
-    // 1) Escolher o fluxo mais provável a partir do texto livre
-    const flow = this.flows.findFlowByIntent(text);
-    if (!flow) {
-      const topics = this.flows
-        .getAll()
-        .flows.map((f) => f.title)
-        .join(', ');
-      return {
-        reply: `${greeting}Desculpa, não consegui identificar o tema de cara. Posso ajudar com: ${topics}. Me diga em poucas palavras o que você precisa, tipo “minha fatura venceu” ou “como agendar consulta”.`,
-      };
+      if (title) ctx.push(`FLUXO_TITULO=${title}`);
+      if (stepsHtml) ctx.push(`STEPS_HTML=${stepsHtml}`);
+      if (!stepsHtml && stepsTxt) ctx.push(`STEPS=${stepsTxt}`);
+      if (obsHtml) ctx.push(`OBS_HTML=${obsHtml}`);
+      if (!obsHtml && obsTxt) ctx.push(`OBS=${obsTxt}`);
+    } else {
+      const t = topicsList(items);
+      ctx.push(`TOPICOS=${t.join('|')}`);
     }
 
-    // 2) Se tiver guia, respondemos de forma humana e direta
-    const guide = this.formatGuide(flow);
-    if (guide) {
-      return { reply: `${greeting}${guide}`, flowId: flow.id, done: true };
+    const userContent = [
+      `Pergunta do usuário: ${assunto || '(vazio)'}`,
+      `Contexto:\n${ctx.join('\n')}`,
+      matched
+        ? `Instruções:
+- Monte a resposta no template do fluxo.
+- {{TITULO}} = FLUXO_TITULO.
+- Se houver STEPS_HTML/OBS_HTML, use diretamente.
+- Se vier apenas STEPS/OBS em texto, converta em <li>…</li> preservando o conteúdo.
+- Não invente políticas fora do que é padrão do fluxo.`
+        : `Instruções:
+- Não há fluxo específico; responda com saudação ({{SAUDACAO}}) e uma lista curta de assuntos.
+- Gere {{TOPICOS_HTML}} como <li>Assunto</li> a partir de TOPICOS (separados por "|").`,
+      `- Responda sempre em HTML (sem Markdown), conforme o SYSTEM_PROMPT_HTML.`,
+    ].join('\n');
+
+    const completion = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT_HTML },
+        { role: 'user', content: userContent },
+      ],
+    });
+
+    let html =
+      completion.choices?.[0]?.message?.content?.trim() ||
+      `<section><p>Desculpe, não consegui gerar a resposta.</p></section>`;
+
+    // Substituição de placeholders (se vierem)
+    html = html.replace(/{{SAUDACAO}}/g, saud);
+
+    if (!matched) {
+      // monta lista de tópicos se o modelo devolver placeholder
+      const t = topicsList(items);
+      const topicosHtml = t.map((x) => `<li><strong>${x}</strong></li>`).join('');
+      html = html.replace(/{{TOPICOS_HTML}}/g, topicosHtml);
+    } else {
+      // segurança: se o modelo esquecer de montar <li>, tenta converter linhas simples
+      html = html.replace(
+        /{{PASSOS_HTML}}/g,
+        (matched.guide?.steps_html ?? toLiList(matched.guide?.steps)).trim(),
+      );
+      html = html.replace(
+        /{{OBS_HTML}}/g,
+        (matched.guide?.obs_html ?? toLiList(matched.guide?.obs)).trim(),
+      );
+      html = html.replace(/{{TITULO}}/g, matched.title || matched.key);
     }
 
-    // 3) Caso não haja guia, tentar Q&A
-    const qa = this.matchQa(text, flow);
-    if (qa) return { reply: `${greeting}${qa.a}`, flowId: flow.id, done: true };
-
-    // 4) Fallback amigável
-    return {
-      reply: `${greeting}Posso te orientar sobre **${flow.title}**. Se quiser, me pergunte “como fazer” que eu te passo o passo a passo.`,
-      flowId: flow.id,
-      done: true,
-    };
+    return html;
   }
+}
+
+// Converte texto simples/markdown básico em <li>...</li> (fallback leve)
+function toLiList(text?: string): string {
+  if (!text) return '';
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-*\d.]+\s*/, '').trim())
+    .filter(Boolean);
+  return lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('');
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

@@ -14,7 +14,7 @@ import { startChat, uploadExam, type AuthorizeResponseDTO, startAppointment } fr
 type Sender = 'user' | 'bot';
 
 export default function Chat() {
-    interface UiMessage { sender: Sender; text?: string; imageUrl?: string; }
+    interface UiMessage { sender: Sender; text?: string; html?: string; imageUrl?: string; }
 
     const [messages, setMessages] = useState<UiMessage[]>([]);
     const [input, setInput] = useState('');
@@ -65,9 +65,9 @@ export default function Chat() {
                 return;
             }
 
-            // Default: normal Q&A route
-            const res = await startChat({ text });
-            setMessages(prev => [...prev, { sender: 'bot', text: res.reply || '...' }]);
+            // Default: normal Q&A route (Questions AI)
+            const res = await startChat({ message: text });
+            setMessages(prev => [...prev, { sender: 'bot', html: res.html || '<p>...</p>' }]);
         } catch (err) {
             console.error(err);
             setMessages(prev => [...prev, { sender: 'bot', text: 'Desculpe, ocorreu um erro. Tente novamente.' }]);
@@ -174,6 +174,12 @@ export default function Chat() {
                             <div className={`flex flex-col w-full max-w-[80%] ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
                                 <div className={`p-3 rounded-2xl break-words ${m.sender === 'user' ? 'bg-green-600 text-white rounded-br-lg' : 'bg-white text-gray-800 rounded-bl-lg border border-gray-200'}`}>
                                     {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                                    {m.html && (
+                                        <div
+                                            className="prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2"
+                                            dangerouslySetInnerHTML={{ __html: m.html }}
+                                        />
+                                    )}
                                     {m.imageUrl && <img src={m.imageUrl} alt="Uploaded" className="max-w-full rounded-lg mt-2" />}
                                 </div>
                                                                 {m.sender === 'bot' && (
@@ -182,7 +188,16 @@ export default function Chat() {
                                                                                 <button title="Não gostei" className="hover:text-red-600 transition-colors"><ThumbsDown className="h-4 w-4" /></button>
                                                                                 <button
                                                                                     title="Copiar"
-                                                                                    onClick={() => m.text && navigator.clipboard.writeText(m.text)}
+                                                                                    onClick={() => {
+                                                                                        if (m.text) {
+                                                                                            navigator.clipboard.writeText(m.text);
+                                                                                        } else if (m.html) {
+                                                                                            const tmp = document.createElement('div');
+                                                                                            tmp.innerHTML = m.html;
+                                                                                            const plain = tmp.innerText;
+                                                                                            navigator.clipboard.writeText(plain);
+                                                                                        }
+                                                                                    }}
                                                                                     className="hover:text-blue-600 transition-colors"
                                                                                 >
                                                                                     <Copy className="h-4 w-4" />

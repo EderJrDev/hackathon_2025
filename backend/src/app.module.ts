@@ -9,12 +9,12 @@ import { JwtAuthGuard } from './modules/auth/guards/jwt.guard';
 import { AppointmentsAiModule } from './modules/appointment-ai/ai-orchestrator.module';
 
 import { UsersModule } from './modules';
-import { QuestionsAiModule } from './modules/questions-ai/questions-ai.module';
 import { ExamsAuthModule } from './modules/exams/exams.module';
+import { QuestionsAIModule } from './modules/questions-ai';
 
 @Module({
   imports: [
-    QuestionsAiModule,
+    QuestionsAIModule,
     ConfigModule.forRoot({ isGlobal: true }),
     RouterModule.register([
       {
@@ -35,7 +35,7 @@ import { ExamsAuthModule } from './modules/exams/exams.module';
       },
       {
         path: 'chat/questions',
-        module: QuestionsAiModule,
+        module: QuestionsAIModule,
       },
     ]),
 
@@ -43,7 +43,7 @@ import { ExamsAuthModule } from './modules/exams/exams.module';
     UsersModule,
     AppointmentsAiModule,
     ExamsAuthModule,
-    QuestionsAiModule,
+    QuestionsAIModule,
   ],
   controllers: [],
   providers: [
