@@ -22,8 +22,49 @@ export default function Chat() {
     const [appointmentActive, setAppointmentActive] = useState(false);
     const [appointmentSessionId, setAppointmentSessionId] = useState<string | null>(null);
     const bottomRef = useRef<HTMLDivElement | null>(null);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+
+    // Simple intent classifier for PT-BR
+    function classifyIntent(text: string): 'appointment' | 'exams' | 'ask' {
+        const t = text.toLowerCase();
+
+        // First: informational/how-to questions should go to ASK
+        const infoWords = /(como|dúvida|duvida|informação|informacao|passo a passo|explicar|orientação|orientacao|saber)/i;
+        const mentionsAppointment = /(agendar|agendamento|marcar|remarcar).*(consulta|médico|medico)|consulta.*(como|agendar|marcar)/i;
+        const mentionsExams = /(autorizar|autorização|autorizacao|liberar|liberação|liberacao).*(exame|procedimento|guia|pedido)|exame.*(como|autorizar|liberar)/i;
+        if (infoWords.test(t) && (mentionsAppointment.test(t) || mentionsExams.test(t))) {
+            return 'ask';
+        }
+
+        // Appointment-related: verbs + consulta
+        const appointmentVerb = /(agendar|agendamento|marcar|remarcar|agende|preciso|quero|fazer)/i;
+        const appointmentNoun = /(consulta|médico|medico|dermatologista|pediatra|cardiologista)/i;
+        const appointmentPhrases = /(agendar consulta|marcar consulta|remarcar consulta|agendar uma consulta|agendar atendimento)/i;
+
+        if (appointmentPhrases.test(t) || (appointmentVerb.test(t) && appointmentNoun.test(t))) {
+            return 'appointment';
+        }
+
+        // Exams authorization-related: authorization/liberation + exam terms
+        const examAuthVerb = /(autoriza|autorização|autorizacao|libera|liberação|liberacao|aprova|aprovação|aprovacao)/i;
+        const examNoun = /(exame|procedimento|guia|pedido|solicitação|solicitacao)/i;
+        const examPhrases = /(autorizar exame|liberar exame|autorização de exame|autorizacao de exame)/i;
+
+        if (examPhrases.test(t) || (examAuthVerb.test(t) && examNoun.test(t))) {
+            return 'exams';
+        }
+
+        return 'ask';
+    }
+
+    function ensureAppointmentSession(): string {
+        if (appointmentSessionId) return appointmentSessionId;
+        const sid = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        setAppointmentSessionId(sid);
+        return sid;
+    }
 
     async function handleSend() {
         if (!input.trim() || loading) return;
@@ -48,14 +89,13 @@ export default function Chat() {
                 }
                 return;
             }
+            // Intent detection
+            const intent = classifyIntent(normalized);
 
-            // Detect new appointment intent
-            if (normalized === 'agendamento') {
-                const sessionId = 'mock-session-123'; // mocked session for now
-                setAppointmentSessionId(sessionId);
+            if (intent === 'appointment') {
+                const sessionId = ensureAppointmentSession();
                 setAppointmentActive(true);
-                // first call with empty message as requested
-                const res = await startAppointment({ sessionId, message: '' });
+                const res = await startAppointment({ sessionId, message: text });
                 const reply = res.reply || '...';
                 setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
                 const replyLower = reply.toLowerCase();
@@ -65,9 +105,30 @@ export default function Chat() {
                 return;
             }
 
-            // Default: normal Q&A route (Questions AI)
+            if (intent === 'exams') {
+                // Prompt user to upload the exam file and open the file picker
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        sender: 'bot',
+                        text:
+                            'Claro! Para autorizar seu exame, anexe a foto/PDF do pedido (ou guia) clicando no clipe. Assim que o arquivo for enviado, eu faço a análise e retorno o status.',
+                    },
+                ]);
+                // Open the file picker automatically for convenience
+                fileInputRef.current?.click();
+                return;
+            }
+
+            // Default: normal Q&A route (Questions AI) + add appointment suggestion at the end
             const res = await startChat({ message: text });
-            setMessages(prev => [...prev, { sender: 'bot', html: res.html || '<p>...</p>' }]);
+            const suggestion = `
+                <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;color:#4b5563;font-size:0.9em;">
+                  <strong>Quer agendar uma consulta?</strong> Você pode digitar: <em>Agendar consulta</em>.
+                </div>
+            `;
+            const htmlWithSuggestion = (res.html || '<p>...</p>') + suggestion;
+            setMessages(prev => [...prev, { sender: 'bot', html: htmlWithSuggestion }]);
         } catch (err) {
             console.error(err);
             setMessages(prev => [...prev, { sender: 'bot', text: 'Desculpe, ocorreu um erro. Tente novamente.' }]);
@@ -240,7 +301,7 @@ export default function Chat() {
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                          <label className="p-2 text-gray-500 hover:text-green-600 cursor-pointer">
                             <Paperclip className="h-5 w-5" />
-                            <input type="file" accept="image/*,application/pdf" onChange={handleImageUpload} className="hidden" />
+                            <input ref={fileInputRef} type="file" accept="image/*,application/pdf" onChange={handleImageUpload} className="hidden" />
                         </label>
                         <button onClick={handleSend} disabled={loading || !input.trim()} className="p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:bg-green-300 disabled:cursor-not-allowed transition-colors" title="Enviar">
                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>

@@ -43,9 +43,12 @@ Quando houver um assunto/fluxo reconhecido, responda exatamente neste formato:
 
 Se NÃO houver fluxo específico, responda com uma saudação e a lista curta de assuntos:
 <section style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.55;color:#0f172a">
-  <p style="margin:0 0 8px"><strong>{{SAUDACAO}}</strong> 😊 Eu sou a Ana, posso te orientar passo a passo. Sobre qual assunto você precisa?</p>
-  <p style="margin:8px 0 6px;font-size:13px;color:#475569">Posso orientar com:</p>
-  <ul style="margin:0 0 8px 18px">{{TOPICOS_HTML}}</ul>
+  <p style="margin:0 0 8px"><strong>{{SAUDACAO}}</strong> Desculpa! Não encontrei uma resposta!</p>
+  <p style="margin:8px 0 6px;font-size:13px;color:#475569">Mas posso orientar com:</p>
+  <ul style="margin:0 0 0px 18px">{{TOPICOS_HTML}}</ul>
+  <ul style="margin:0 0 0px 18px">Pesquisar Consultas Agendadas</ul>
+  <ul style="margin:0 0 8px 18px">Pesquisar Liberação de Exame</ul>
+
   <p style="margin:0;font-size:13px;color:#64748b">Pode escrever, por exemplo: “como agendar consulta” ou “preciso da 2ª via do boleto”.</p>
 </section>
 

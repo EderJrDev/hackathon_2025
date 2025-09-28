@@ -13,20 +13,6 @@
   "entities": [],
   "flows": [
     {
-      "id": "saudacao",
-      "title": "Boas-vindas",
-      "intents": ["bom dia", "boa tarde", "boa noite", "oi", "olá", "ola", "tudo bem", "como vai", "boa-noite", "boa-tarde", "bom-dia"],
-      "patterns": [
-        "^(\\s)*(bom dia|boa tarde|boa noite|boa-noite|boa-tarde|bom-dia|oi|olá|ola|tudo bem|como vai)[!,. ]*($|.*)$"
-      ],
-      "description": "Saudação inicial e orientação sobre os assuntos disponíveis.",
-      "behavior": { "mode": "static", "priority": 100 },
-      "guide": {
-        "steps_html": "<li><strong>{{SAUDACAO}}</strong> 😊 Eu sou a Ana. Posso te orientar com o passo a passo.</li><li>Assuntos mais comuns: <strong>Agendamento de Consultas</strong>, <strong>Segunda Via de Boleto</strong>, <strong>Troca de Titularidade</strong>, <strong>Plano de Maioridade</strong>, <strong>Solicitação de Autorização de Exames</strong>, <strong>Cobrança Indevida</strong>, <strong>Atualização Cadastral</strong>.</li><li>Escreva sua dúvida em linguagem natural. Ex.: “como agendar consulta?”, “minha fatura venceu”.</li>",
-        "obs_html": "<li>Não solicitamos dados pessoais aqui. Eu apenas explico como fazer.</li>"
-      }
-    },
-    {
       "id": "agendamento_consultas",
       "title": "Agendar Consulta",
       "intents": [
