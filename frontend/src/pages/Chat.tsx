@@ -9,7 +9,7 @@ import {
   User,
 } from 'lucide-react';
 
-import { startChat, uploadExam, type AuthorizeResponseDTO } from '../lib/chatApi';
+import { startChat, uploadExam, type AuthorizeResponseDTO, startAppointment } from '../lib/chatApi';
 
 type Sender = 'user' | 'bot';
 
@@ -19,6 +19,8 @@ export default function Chat() {
     const [messages, setMessages] = useState<UiMessage[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
+    const [appointmentActive, setAppointmentActive] = useState(false);
+    const [appointmentSessionId, setAppointmentSessionId] = useState<string | null>(null);
     const bottomRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
@@ -30,6 +32,40 @@ export default function Chat() {
         setInput('');
         setLoading(true);
         try {
+            const normalized = text.trim().toLowerCase();
+
+            // If appointment flow already active, keep using appointment route
+            if (appointmentActive && appointmentSessionId) {
+                const res = await startAppointment({ sessionId: appointmentSessionId, message: text });
+                const reply = res.reply || '...';
+                setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
+                // End flow if backend signaled closure
+                const replyLower = reply.toLowerCase();
+                if (replyLower.includes('encerrado') || replyLower.includes('protocolo')) {
+                    setAppointmentActive(false);
+                    // keep sessionId if you want history; or clear
+                    // setAppointmentSessionId(null);
+                }
+                return;
+            }
+
+            // Detect new appointment intent
+            if (normalized === 'agendamento') {
+                const sessionId = 'mock-session-123'; // mocked session for now
+                setAppointmentSessionId(sessionId);
+                setAppointmentActive(true);
+                // first call with empty message as requested
+                const res = await startAppointment({ sessionId, message: '' });
+                const reply = res.reply || '...';
+                setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
+                const replyLower = reply.toLowerCase();
+                if (replyLower.includes('encerrado') || replyLower.includes('protocolo')) {
+                    setAppointmentActive(false);
+                }
+                return;
+            }
+
+            // Default: normal Q&A route
             const res = await startChat({ text });
             setMessages(prev => [...prev, { sender: 'bot', text: res.reply || '...' }]);
         } catch (err) {

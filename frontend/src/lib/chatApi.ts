@@ -39,6 +39,12 @@ export async function uploadExam(file: File) {
   });
   return data as AuthorizeResponseDTO;
 }
+
+// ====== Appointment chat orchestration ======
+export async function startAppointment(payload: { sessionId: string; message: string }) {
+  const { data } = await api.post('/chat/appointment', payload);
+  return data as { reply: string };
+}
 export async function sendMessage(sessionId: string, message: string) {
   const { data } = await api.post('/chat/message', { sessionId, message });
   return data as { reply: string; nameCaptured: string | null; dobCaptured: string | null };
