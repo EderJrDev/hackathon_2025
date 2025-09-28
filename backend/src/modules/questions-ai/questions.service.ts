@@ -69,12 +69,24 @@ function saudacaoBR(date = new Date()) {
 }
 
 function normalizeFlows(raw: any): NormalizedFlows {
-  // aceita formatos: { items: [...] } ou diretamente [...]
-  const items: FlowItem[] = Array.isArray(raw)
+  // Aceita formatos: { items: [...] }, { flows: [...] } ou diretamente [...]
+  const list: any[] = Array.isArray(raw)
     ? raw
     : Array.isArray(raw?.items)
     ? raw.items
+    : Array.isArray(raw?.flows)
+    ? raw.flows
     : [];
+
+  // Garante a presença de "key" (usando id, quando existir)
+  const items: FlowItem[] = list.map((it) => ({
+    key: (it.key ?? it.id ?? '').toString(),
+    title: it.title,
+    intents: it.intents,
+    patterns: it.patterns,
+    guide: it.guide,
+  }));
+
   return { items };
 }
 

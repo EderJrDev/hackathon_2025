@@ -30,11 +30,22 @@ export type MatchedFlow = FlowItem & {
 
 // -------------------- Helpers --------------------
 function normalizeFlows(raw: any): NormalizedFlows {
-  const items: FlowItem[] = Array.isArray(raw)
+  // Aceita formatos: { items: [...] }, { flows: [...] } ou diretamente [...]
+  const list: any[] = Array.isArray(raw)
     ? raw
     : Array.isArray(raw?.items)
     ? raw.items
+    : Array.isArray(raw?.flows)
+    ? raw.flows
     : [];
+
+  const items: FlowItem[] = list.map((it) => ({
+    key: (it.key ?? it.id ?? '').toString(),
+    title: it.title,
+    intents: it.intents,
+    patterns: it.patterns,
+    guide: it.guide,
+  }));
   return { items };
 }
 
