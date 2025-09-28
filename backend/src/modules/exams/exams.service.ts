@@ -1,17 +1,60 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { AuthorizationStatus } from '@prisma/client';
 import OpenAI from 'openai';
 import { OPENAI } from './openai.provider';
 import { Inject } from '@nestjs/common';
+import { PrismaService } from '../../common/prisma.service';
 import { AuthorizeResponseDTO, ProcedureDecisionDTO } from './dtos/exams.dto';
 import pdfParse from 'pdf-parse';
 import sharp from 'sharp';
 
 @Injectable()
 export class ExamsAuthService {
-  private prisma = new PrismaClient();
+  constructor(
+    @Inject(OPENAI) private readonly openai: OpenAI,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  constructor(@Inject(OPENAI) private readonly openai: OpenAI) {}
+  private async generateUniqueProtocol(): Promise<string> {
+    const year = new Date().getFullYear();
+    let protocol: string;
+    for (let i = 0; i < 5; i++) {
+      const random = Math.floor(100000 + Math.random() * 900000);
+      protocol = `${year}${random}`;
+      const exists = await this.prisma.examAuthorization.findUnique({
+        where: { protocol },
+      });
+      if (!exists) return protocol;
+    }
+    return `${year}${Date.now().toString().slice(-6)}`;
+  }
+
+  private normalizeDate(input?: string): string | undefined {
+    if (!input) return undefined;
+    const trimmed = input.trim();
+    if (!trimmed) return undefined;
+    // Formato DD/MM/AAAA
+    const dmy = /^(\d{2})[\/](\d{2})[\/](\d{4})$/;
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/;
+    let year: string, month: string, day: string;
+    if (dmy.test(trimmed)) {
+      const m = trimmed.match(dmy)!;
+      day = m[1];
+      month = m[2];
+      year = m[3];
+    } else if (iso.test(trimmed)) {
+      const m = trimmed.match(iso)!;
+      year = m[1];
+      month = m[2];
+      day = m[3];
+    } else {
+      return undefined; // formato não suportado
+    }
+    // validação básica
+    if (Number(month) < 1 || Number(month) > 12) return undefined;
+    if (Number(day) < 1 || Number(day) > 31) return undefined;
+    return `${year}-${month}-${day}`;
+  }
 
   async processFileAndAuthorize(
     file: Express.Multer.File,
@@ -105,11 +148,12 @@ export class ExamsAuthService {
     // 2) Prompt otimizado focado apenas no essencial
     const prompt = [
       'Você é um extrator médico especializado.',
-      'TAREFA: Extrair APENAS procedimentos/exames médicos e nome do paciente.',
-      'FORMATO DE RESPOSTA: JSON exato no formato: {"patient": {"name": "string ou null"}, "procedures": [{"name": "string", "qty": number}]}',
+      'TAREFA: Extrair APENAS procedimentos/exames médicos, nome completo do paciente e data de nascimento (quando disponível). Se houver data do documento (emissão) inclua também.',
+      'FORMATO DE RESPOSTA: JSON exato no formato: {"patient": {"name": "string|null", "birthDate": "AAAA-MM-DD|null"}, "procedures": [{"name": "string", "qty": number}]}',
       'REGRAS:',
       '- Extrair apenas nomes de procedimentos/exames claramente visíveis',
       '- Nome do paciente se estiver presente',
+      '- birthDate: aceitar formatos DD/MM/AAAA ou AAAA-MM-DD e converter para AAAA-MM-DD',
       '- Não inventar informações',
       '- Ignorar outras informações médicas',
       '- Retornar APENAS o JSON, sem explicações',
@@ -241,15 +285,40 @@ export class ExamsAuthService {
       }
     }
 
-    // 6) Retorna a resposta consolidada
+    const normalizedBirth = this.normalizeDate(patient?.birthDate);
+
+    const protocolBatch = await this.generateUniqueProtocol();
+
+    const proceduresWithProtocols = [];
+    for (const d of decisions) {
+      let status: AuthorizationStatus = AuthorizationStatus.PENDING;
+      if (d.decision === 'AUTHORIZED') status = AuthorizationStatus.APPROVED;
+      else if (d.decision === 'DENIED_NO_COVER')
+        status = AuthorizationStatus.DENIED;
+      else status = AuthorizationStatus.PENDING; // pendências de auditoria
+
+      const protocol = await this.generateUniqueProtocol();
+      await this.prisma.examAuthorization.create({
+        data: {
+          protocol,
+          pacientName: patient?.name || 'DESCONHECIDO',
+          pacientBirth: normalizedBirth
+            ? new Date(normalizedBirth)
+            : new Date('1970-01-01'),
+          status,
+        },
+      });
+      proceduresWithProtocols.push({ ...d, protocol });
+    }
+
     return {
       patient: {
         name: patient?.name,
-        birthDate: patient?.birthDate,
-        docDate: patient?.docDate,
+        birthDate: normalizedBirth,
       },
-      procedures: decisions,
+      procedures: proceduresWithProtocols,
       source: 'gpt-json+db',
+      protocolBatch,
     };
   }
 }

@@ -83,6 +83,14 @@ export class AppointmentsService {
     patientName: string; // **nome limpo** (apenas o nome)
     patientBirth: Date; // **Date** criado a partir de YYYY-MM-DD (ISO) vindo do orquestrador
   }) {
+    const generateProtocol = () => {
+      const year = new Date().getFullYear();
+      const rand = Math.floor(Math.random() * 1_000_000)
+        .toString()
+        .padStart(6, '0');
+      return `${year}${rand}`; // Ex: 2025001234
+    };
+
     return this.prisma.$transaction(async (tx) => {
       const avail = await tx.availability.findUnique({
         where: { id: params.availabilityId },
@@ -93,19 +101,73 @@ export class AppointmentsService {
       if (avail.doctorId !== params.doctorId)
         throw new BadRequestException('DOCTOR_MISMATCH');
 
-      const appt = await tx.appointment.create({
-        data: {
-          doctorId: avail.doctorId,
-          patientName: params.patientName, // grava apenas o nome
-          patientBirth: params.patientBirth, // Date correto
-          date: avail.date, // DateTime do slot (UTC no banco)
-          status: AppointmentStatus.CONFIRMED, // conforme fluxo
-        },
-        select: { id: true, protocol: true, status: true, date: true },
-      });
+      let attempt = 0;
+      let appt;
+      while (attempt < 3) {
+        const protocol = generateProtocol();
+        try {
+          appt = await tx.appointment.create({
+            data: {
+              doctorId: avail.doctorId,
+              patientName: params.patientName,
+              patientBirth: params.patientBirth,
+              date: avail.date,
+              status: AppointmentStatus.CONFIRMED,
+              protocol,
+            },
+            select: { id: true, protocol: true, status: true, date: true },
+          });
+          break;
+        } catch (err: any) {
+          // Prisma P2002 unique constraint failed
+          if (err.code === 'P2002' && err.meta?.target?.includes('protocol')) {
+            attempt += 1;
+            if (attempt >= 3) throw err;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      if (!appt) throw new Error('FAILED_TO_CREATE_APPOINTMENT');
 
       await tx.availability.delete({ where: { id: avail.id } });
       return appt;
     });
+  }
+
+  async getAppointmentsByPatientName(name: string, birth: Date) {
+    if (!name || !birth)
+      throw new BadRequestException('name e birth são obrigatórios');
+
+    // Busca por nome (case insensitive, parcial) e data de nascimento exata
+    const appts = await this.prisma.appointment.findMany({
+      where: {
+        patientName: { contains: name, mode: 'insensitive' },
+        patientBirth: birth,
+        date: {
+          lte: new Date(new Date().setDate(new Date().getDate() + 30)),
+          gte: new Date(new Date().setDate(new Date().getDate() - 7)),
+        },
+      },
+      orderBy: { date: 'desc' },
+      select: {
+        protocol: true,
+        status: true,
+        date: true,
+        doctor: {
+          select: {
+            name: true,
+            crm: true,
+            city: true,
+            specialtyId: true,
+          },
+        },
+      },
+    });
+
+    if (appts.length === 0)
+      throw new NotFoundException('APPOINTMENTS_NOT_FOUND');
+    return appts;
   }
 }

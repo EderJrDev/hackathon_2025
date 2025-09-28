@@ -44,4 +44,12 @@ export class AppointmentsController {
       patientBirth: new Date(patientBirth),
     });
   }
+
+  @Get('by-patient')
+  getAppointmentsByPatientName(
+    @Query('name') name: string,
+    @Query('birth') birth: string,
+  ) {
+    return this.service.getAppointmentsByPatientName(name, new Date(birth));
+  }
 }

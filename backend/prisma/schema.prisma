@@ -65,7 +65,7 @@ model Availability {
 
 model Appointment {
   id          String            @id @default(cuid())
-  protocol    String            @unique @default(cuid())
+  protocol    String            @unique
   doctorId    String
   doctor      Doctor            @relation(fields: [doctorId], references: [id])
   patientName String
@@ -98,4 +98,23 @@ model Exam {
 
   @@index([name])
   @@map("exams")
+}
+
+model ExamAuthorization {
+  id          String    @id @default(cuid())
+  protocol    String    @unique
+  pacientName String
+  pacientBirth DateTime
+  status      AuthorizationStatus @default(PENDING)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("exam_authorizations")
+}
+
+enum AuthorizationStatus {
+  PENDING
+  APPROVED
+  DENIED
 }

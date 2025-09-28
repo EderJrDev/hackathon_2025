@@ -22,8 +22,10 @@ function small(text: string) {
 }
 
 function numbered(items: string[]) {
-  return `<ol style="margin:4px 0 12px 18px">${items
-    .map((i) => `<li>${i}</li>`)
+  // Inclui índice textual dentro do <li> para garantir que o número apareça
+  // mesmo que o estilo de lista seja resetado no frontend.
+  return `<ol style="margin:4px 0 12px 18px;list-style:decimal;">${items
+    .map((i, idx) => `<li><strong>${idx + 1}.</strong> ${i}</li>`)
     .join('')}</ol>`;
 }
 
@@ -428,7 +430,7 @@ Regras gerais:
         const ask = wrapHtml(
           withExitHint(
             paragraph(
-              'Qual especialidade desejada? <span style="font-size:13px;color:#475569">Ex.: cardiologista, ortopedia, gineco, médico do coração, etc.</span>',
+              'Qual especialidade desejada? <span style="font-size:13px;color:#475569">Ex.: cardiologista, ortopedia, gineco, etc.</span>',
             ),
           ),
         );

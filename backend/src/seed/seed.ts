@@ -170,6 +170,12 @@ async function main() {
     );
     appointmentDate.setHours(8 + Math.floor(Math.random() * 8), 0, 0, 0); // Between 8:00 and 15:00
 
+    const protocol = `${new Date().getFullYear()}${Math.floor(
+      Math.random() * 1_000_000,
+    )
+      .toString()
+      .padStart(6, '0')}`;
+
     await prisma.appointment.create({
       data: {
         doctorId: randomDoctor.id,
@@ -177,6 +183,7 @@ async function main() {
         patientBirth: patient.birth,
         date: appointmentDate,
         status: status as any,
+        protocol,
       },
     });
   }

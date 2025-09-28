@@ -55,10 +55,12 @@ export class ProcedureDecisionDTO {
   decision: ExamDecision;
   reason: string; // Mensagem amigável
   slaDays?: number; // 5 ou 10 quando pendente
+  protocol?: string; // Protocolo gerado e salvo em ExamAuthorization
 }
 
 export class AuthorizeResponseDTO {
-  patient?: { name?: string; birthDate?: string; docDate?: string };
+  patient?: { name?: string; birthDate?: string };
   procedures: ProcedureDecisionDTO[];
   source: 'gpt-json+db';
+  protocolBatch?: string; // Protocolo geral do arquivo (opcional caso queira um único para todo upload)
 }
