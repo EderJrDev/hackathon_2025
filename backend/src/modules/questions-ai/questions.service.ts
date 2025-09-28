@@ -7,6 +7,10 @@ import { join } from 'path';
 // -------------------- Tipos auxiliares --------------------
 type InputDto = { message: string };
 
+export type AskHtmlResponse = { html: string };
+export type AskRouteDirective = { route: 'appointment' | 'exams'; reason?: string };
+export type AskResponse = AskHtmlResponse | AskRouteDirective;
+
 type FlowGuide = {
   steps_html?: string; // já em <li>...</li>
   obs_html?: string;   // já em <li>...</li>
@@ -180,13 +184,27 @@ export class QuestionsService {
    * Recebe a mensagem do usuário, tenta identificar um fluxo correspondente
    * e chama a IA para formatar a resposta em HTML com tom de atendente.
    */
-  async ask(dto: InputDto): Promise<string> {
+  async ask(dto: InputDto): Promise<AskResponse> {
     const assunto = (dto?.message ?? '').trim();
     const items = this.flows.items || [];
     const matched = tryMatchFlow(assunto, items);
     const saud = saudacaoBR();
 
     const ctx: string[] = [`SAUDACAO=${saud}`];
+
+    // 0) Roteamento leve por intenção
+    const t = assunto.toLowerCase();
+    const isInfo = /(como|dúvida|duvida|informação|informacao|explicar|orientação|orientacao|saber)/i.test(t);
+    const appointmentIntent = /(agendar|agendamento|marcar|remarcar|agende|preciso|quero|fazer).*(consulta|m[eé]dico|dermatologista|pediatra|cardiologista)/i.test(t)
+      || /(agendar consulta|marcar consulta|remarcar consulta|agendar uma consulta|agendar atendimento)/i.test(t);
+    const examsIntent = /(autoriza|autorização|autorizacao|libera|liberação|liberacao|aprova|aprovação|aprovacao).*(exame|procedimento|guia|pedido|solicitação|solicitacao)/i.test(t)
+      || /(autorizar exame|liberar exame|autorização de exame|autorizacao de exame)/i.test(t);
+
+    // Se não é uma pergunta informativa e detectou intenção operacional, devolve diretiva de rota
+    if (!isInfo && (appointmentIntent || examsIntent)) {
+      const route: 'appointment' | 'exams' = appointmentIntent ? 'appointment' : 'exams';
+      return { route, reason: 'intent-detected' };
+    }
 
     if (matched) {
       const title = matched.title || matched.key;
@@ -256,7 +274,7 @@ export class QuestionsService {
       html = html.replace(/{{TITULO}}/g, matched.title || matched.key);
     }
 
-    return html;
+    return { html };
   }
 }
 

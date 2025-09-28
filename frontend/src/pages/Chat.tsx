@@ -9,7 +9,7 @@ import {
   User,
 } from 'lucide-react';
 
-import { startChat, uploadExam, type AuthorizeResponseDTO, startAppointment } from '../lib/chatApi';
+import { startChat, uploadExam, type AuthorizeResponseDTO, startAppointment, type AskResponse } from '../lib/chatApi';
 
 type Sender = 'user' | 'bot';
 
@@ -18,46 +18,25 @@ export default function Chat() {
 
     const [messages, setMessages] = useState<UiMessage[]>([]);
     const [input, setInput] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [loadingAsk, setLoadingAsk] = useState(false);
+    const [loadingUpload, setLoadingUpload] = useState(false);
+    const loading = loadingAsk || loadingUpload;
     const [appointmentActive, setAppointmentActive] = useState(false);
     const [appointmentSessionId, setAppointmentSessionId] = useState<string | null>(null);
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const textInputRef = useRef<HTMLInputElement | null>(null);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
-
-    // Simple intent classifier for PT-BR
-    function classifyIntent(text: string): 'appointment' | 'exams' | 'ask' {
-        const t = text.toLowerCase();
-
-        // First: informational/how-to questions should go to ASK
-        const infoWords = /(como|dúvida|duvida|informação|informacao|passo a passo|explicar|orientação|orientacao|saber)/i;
-        const mentionsAppointment = /(agendar|agendamento|marcar|remarcar).*(consulta|médico|medico)|consulta.*(como|agendar|marcar)/i;
-        const mentionsExams = /(autorizar|autorização|autorizacao|liberar|liberação|liberacao).*(exame|procedimento|guia|pedido)|exame.*(como|autorizar|liberar)/i;
-        if (infoWords.test(t) && (mentionsAppointment.test(t) || mentionsExams.test(t))) {
-            return 'ask';
+    // Keep input focused on mount and after bot responses/uploads finish
+    useEffect(() => { textInputRef.current?.focus(); }, []);
+    useEffect(() => {
+        if (!loadingAsk && !loadingUpload) {
+            textInputRef.current?.focus();
         }
+    }, [loadingAsk, loadingUpload, messages.length]);
 
-        // Appointment-related: verbs + consulta
-        const appointmentVerb = /(agendar|agendamento|marcar|remarcar|agende|preciso|quero|fazer)/i;
-        const appointmentNoun = /(consulta|médico|medico|dermatologista|pediatra|cardiologista)/i;
-        const appointmentPhrases = /(agendar consulta|marcar consulta|remarcar consulta|agendar uma consulta|agendar atendimento)/i;
-
-        if (appointmentPhrases.test(t) || (appointmentVerb.test(t) && appointmentNoun.test(t))) {
-            return 'appointment';
-        }
-
-        // Exams authorization-related: authorization/liberation + exam terms
-        const examAuthVerb = /(autoriza|autorização|autorizacao|libera|liberação|liberacao|aprova|aprovação|aprovacao)/i;
-        const examNoun = /(exame|procedimento|guia|pedido|solicitação|solicitacao)/i;
-        const examPhrases = /(autorizar exame|liberar exame|autorização de exame|autorizacao de exame)/i;
-
-        if (examPhrases.test(t) || (examAuthVerb.test(t) && examNoun.test(t))) {
-            return 'exams';
-        }
-
-        return 'ask';
-    }
+    // Front não classifica mais; delega ao /ask e reage à diretiva
 
     function ensureAppointmentSession(): string {
         if (appointmentSessionId) return appointmentSessionId;
@@ -66,82 +45,88 @@ export default function Chat() {
         return sid;
     }
 
+    function isAppointmentClosed(text: string): boolean {
+        const t = text.toLowerCase();
+        return (
+            t.includes('encerrado') ||
+            t.includes('encerrada') ||
+            t.includes('cancelado') ||
+            t.includes('cancelada') ||
+            t.includes('cancelamento') ||
+            t.includes('finalizado') ||
+            t.includes('finalizada') ||
+            t.includes('protocolo') // muitas vezes o encerramento vem junto com um protocolo
+        );
+    }
+
     async function handleSend() {
-        if (!input.trim() || loading) return;
+        if (!input.trim() || loadingAsk) return;
         const text = input.trim();
         setMessages(prev => [...prev, { sender: 'user', text }]);
         setInput('');
-        setLoading(true);
+        setLoadingAsk(true);
         try {
-            const normalized = text.trim().toLowerCase();
-
             // If appointment flow already active, keep using appointment route
             if (appointmentActive && appointmentSessionId) {
                 const res = await startAppointment({ sessionId: appointmentSessionId, message: text });
                 const reply = res.reply || '...';
-                setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
+                setMessages(prev => [...prev, { sender: 'bot', html: reply }]);
                 // End flow if backend signaled closure
-                const replyLower = reply.toLowerCase();
-                if (replyLower.includes('encerrado') || replyLower.includes('protocolo')) {
+                if (isAppointmentClosed(reply)) {
                     setAppointmentActive(false);
-                    // keep sessionId if you want history; or clear
-                    // setAppointmentSessionId(null);
+                    setAppointmentSessionId(null);
                 }
                 return;
             }
-            // Intent detection
-            const intent = classifyIntent(normalized);
-
-            if (intent === 'appointment') {
-                const sessionId = ensureAppointmentSession();
-                setAppointmentActive(true);
-                const res = await startAppointment({ sessionId, message: text });
-                const reply = res.reply || '...';
-                setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
-                const replyLower = reply.toLowerCase();
-                if (replyLower.includes('encerrado') || replyLower.includes('protocolo')) {
-                    setAppointmentActive(false);
+            // Sempre chama /ask primeiro; ele decide se responde HTML ou direciona rota
+            const askRes = await startChat({ message: text });
+            if ('route' in askRes) {
+                if (askRes.route === 'appointment') {
+                    const sessionId = ensureAppointmentSession();
+                    setAppointmentActive(true);
+                    const appRes = await startAppointment({ sessionId, message: text });
+                    const reply = appRes.reply || '...';
+                    setMessages(prev => [...prev, { sender: 'bot', html: reply }]);
+                    if (isAppointmentClosed(reply)) {
+                        setAppointmentActive(false);
+                        setAppointmentSessionId(null);
+                    }
+                    return;
                 }
-                return;
+                if (askRes.route === 'exams') {
+                    // Orienta e abre o picker
+                    setMessages(prev => [
+                        ...prev,
+                        {
+                            sender: 'bot',
+                            text:
+                                'Claro! Para autorizar seu exame, anexe a foto/PDF do pedido (ou guia) clicando no clipe. Assim que o arquivo for enviado, eu faço a análise e retorno o status.',
+                        },
+                    ]);
+                    fileInputRef.current?.click();
+                    return;
+                }
+            } else {
+                const suggestion = `
+                    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;color:#4b5563;font-size:0.9em;">
+                      <strong>Quer agendar uma consulta?</strong> Você pode digitar: <em>Agendar consulta</em>.
+                    </div>
+                `;
+                const htmlWithSuggestion = (askRes.html || '<p>...</p>') + suggestion;
+                setMessages(prev => [...prev, { sender: 'bot', html: htmlWithSuggestion }]);
             }
-
-            if (intent === 'exams') {
-                // Prompt user to upload the exam file and open the file picker
-                setMessages(prev => [
-                    ...prev,
-                    {
-                        sender: 'bot',
-                        text:
-                            'Claro! Para autorizar seu exame, anexe a foto/PDF do pedido (ou guia) clicando no clipe. Assim que o arquivo for enviado, eu faço a análise e retorno o status.',
-                    },
-                ]);
-                // Open the file picker automatically for convenience
-                fileInputRef.current?.click();
-                return;
-            }
-
-            // Default: normal Q&A route (Questions AI) + add appointment suggestion at the end
-            const res = await startChat({ message: text });
-            const suggestion = `
-                <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;color:#4b5563;font-size:0.9em;">
-                  <strong>Quer agendar uma consulta?</strong> Você pode digitar: <em>Agendar consulta</em>.
-                </div>
-            `;
-            const htmlWithSuggestion = (res.html || '<p>...</p>') + suggestion;
-            setMessages(prev => [...prev, { sender: 'bot', html: htmlWithSuggestion }]);
         } catch (err) {
             console.error(err);
             setMessages(prev => [...prev, { sender: 'bot', text: 'Desculpe, ocorreu um erro. Tente novamente.' }]);
         } finally {
-            setLoading(false);
+            setLoadingAsk(false);
         }
     }
     
     const handleSuggestionClick = (suggestion: string) => {
         setInput(suggestion);
         // Foca no input após clicar na sugestão para facilitar o envio
-        const inputElement = document.getElementById('chat-input');
-        inputElement?.focus();
+        textInputRef.current?.focus();
     }
 
     function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) { if (e.key === 'Enter') { e.preventDefault(); handleSend(); } }
@@ -183,8 +168,9 @@ export default function Chat() {
     }
 
     async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+        const inputEl = e.currentTarget;
         const file = e.target.files?.[0];
-                if (!file || loading) return;
+                if (!file) return;
                 // show local preview or filename immediately
                 if (file.type.startsWith('image/')) {
                     const imageUrl = URL.createObjectURL(file);
@@ -192,7 +178,7 @@ export default function Chat() {
                 } else {
                     setMessages(prev => [...prev, { sender: 'user', text: `Arquivo enviado: ${file.name}` }]);
                 }
-        setLoading(true);
+        setLoadingUpload(true);
         try {
             const res = await uploadExam(file);
             const text = formatAuthorizeResponse(res) || 'Recebi o arquivo e processei as informações.';
@@ -201,9 +187,10 @@ export default function Chat() {
             console.error(err);
             setMessages(prev => [...prev, { sender: 'bot', text: 'Não consegui processar o arquivo. Tente novamente com uma imagem nítida (PNG, JPG, PDF).' }]);
         } finally {
-            setLoading(false);
+            setLoadingUpload(false);
             // reset input so same file can be reselected if needed
-            e.currentTarget.value = '';
+            if (inputEl) inputEl.value = '';
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     }
 
@@ -290,6 +277,7 @@ export default function Chat() {
                 <div className="relative">
                     <input
                         id="chat-input"
+                        ref={textInputRef}
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
@@ -297,6 +285,7 @@ export default function Chat() {
                         placeholder={loading ? 'Aguarde...' : 'Digite sua mensagem...'}
                         disabled={loading}
                         className="w-full py-3 pl-4 pr-24 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-800 transition-shadow"
+                        autoFocus
                     />
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
                          <label className="p-2 text-gray-500 hover:text-green-600 cursor-pointer">

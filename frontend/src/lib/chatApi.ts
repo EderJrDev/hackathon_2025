@@ -3,10 +3,11 @@ import axios from 'axios';
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 export const api = axios.create({ baseURL: BASE_URL });
 
-// Backend espera { message: string } e responde { html: string }
+// /ask agora pode responder HTML ou uma diretiva de rota
+export type AskResponse = { html: string } | { route: 'appointment' | 'exams'; reason?: string };
 export async function startChat(payload: { message: string }) {
   const { data } = await api.post('/chat/questions/ask', payload);
-  return data as { html: string };
+  return data as AskResponse;
 }
 
 // ====== Exams upload (multipart/form-data) ======

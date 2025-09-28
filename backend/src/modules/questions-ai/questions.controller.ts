@@ -16,9 +16,7 @@ export class QuestionsController {
   @Public()
   @Post('ask')
   async ask(@Body() dto: AskDto) {
-    // o service espera um objeto { message: string }
-    const html = await this.svc.ask({ message: dto.message });
-    // retorne HTML pronto para renderizar no front
-    return { html };
+    // O service agora pode responder com HTML ou uma diretiva de roteamento
+    return this.svc.ask({ message: dto.message });
   }
 }
