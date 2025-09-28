@@ -1,177 +1,253 @@
 import { useState, useRef, useEffect } from 'react';
-import type { KeyboardEvent, ChangeEvent } from 'react';
 import {
   Paperclip,
   Mic,
   ThumbsUp,
   ThumbsDown,
-  RefreshCw,
-  Share2,
   Copy,
-  MoreHorizontal,
-  Sparkles,
+  Bot,
+  User,
 } from 'lucide-react';
 
-import { startChat } from '../lib/chatApi';
+import { startChat, uploadExam, type AuthorizeResponseDTO, startAppointment } from '../lib/chatApi';
 
 type Sender = 'user' | 'bot';
 
-interface UiMessage {
-  sender: Sender;
-  text?: string; // plain text (user) or raw HTML (bot)
-  imageUrl?: string;
-}
-
 export default function Chat() {
-  const [messages, setMessages] = useState<UiMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+    interface UiMessage { sender: Sender; text?: string; html?: string; imageUrl?: string; }
 
-  // auto-scroll
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const [messages, setMessages] = useState<UiMessage[]>([]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [appointmentActive, setAppointmentActive] = useState(false);
+    const [appointmentSessionId, setAppointmentSessionId] = useState<string | null>(null);
+    const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  async function handleSend() {
-    if (!input.trim() || loading) return;
-    const text = input.trim();
+    useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
 
-    setMessages(prev => [...prev, { sender: 'user', text }]);
-    setInput('');
-    setLoading(true);
-    try {
-  // Backend espera { message }
-  const res = await startChat({ message: text });
-  setMessages(prev => [...prev, { sender: 'bot', text: res.html || '...' }]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { sender: 'bot', text: 'Erro ao responder.' }]);
-    } finally {
-      setLoading(false);
+    async function handleSend() {
+        if (!input.trim() || loading) return;
+        const text = input.trim();
+        setMessages(prev => [...prev, { sender: 'user', text }]);
+        setInput('');
+        setLoading(true);
+        try {
+            const normalized = text.trim().toLowerCase();
+
+            // If appointment flow already active, keep using appointment route
+            if (appointmentActive && appointmentSessionId) {
+                const res = await startAppointment({ sessionId: appointmentSessionId, message: text });
+                const reply = res.reply || '...';
+                setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
+                // End flow if backend signaled closure
+                const replyLower = reply.toLowerCase();
+                if (replyLower.includes('encerrado') || replyLower.includes('protocolo')) {
+                    setAppointmentActive(false);
+                    // keep sessionId if you want history; or clear
+                    // setAppointmentSessionId(null);
+                }
+                return;
+            }
+
+            // Detect new appointment intent
+            if (normalized === 'agendamento') {
+                const sessionId = 'mock-session-123'; // mocked session for now
+                setAppointmentSessionId(sessionId);
+                setAppointmentActive(true);
+                // first call with empty message as requested
+                const res = await startAppointment({ sessionId, message: '' });
+                const reply = res.reply || '...';
+                setMessages(prev => [...prev, { sender: 'bot', text: reply }]);
+                const replyLower = reply.toLowerCase();
+                if (replyLower.includes('encerrado') || replyLower.includes('protocolo')) {
+                    setAppointmentActive(false);
+                }
+                return;
+            }
+
+            // Default: normal Q&A route (Questions AI)
+            const res = await startChat({ message: text });
+            setMessages(prev => [...prev, { sender: 'bot', html: res.html || '<p>...</p>' }]);
+        } catch (err) {
+            console.error(err);
+            setMessages(prev => [...prev, { sender: 'bot', text: 'Desculpe, ocorreu um erro. Tente novamente.' }]);
+        } finally {
+            setLoading(false);
+        }
     }
-  }
-
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleSend();
+    
+    const handleSuggestionClick = (suggestion: string) => {
+        setInput(suggestion);
+        // Foca no input após clicar na sugestão para facilitar o envio
+        const inputElement = document.getElementById('chat-input');
+        inputElement?.focus();
     }
-  }
 
-  function handleImageUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      setMessages(prev => [...prev, { sender: 'user', imageUrl }]);
-      // (se quiser enviar a imagem ao backend depois, a gente adapta aqui)
+    function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) { if (e.key === 'Enter') { e.preventDefault(); handleSend(); } }
+    function formatAuthorizeResponse(res: AuthorizeResponseDTO): string {
+        const parts: string[] = [];
+        if (res.patient) {
+            const { name, birthDate, docDate } = res.patient;
+            const patientLine = [name && `Paciente: ${name}`, birthDate && `Nascimento: ${birthDate}`, docDate && `Data doc.: ${docDate}`]
+              .filter(Boolean)
+              .join(' | ');
+            if (patientLine) parts.push(patientLine);
+        }
+        if (res.procedures?.length) {
+            parts.push('Resultado dos procedimentos:');
+            for (const p of res.procedures) {
+                const base = `• ${p.inputName}`;
+                let decision: string;
+                switch (p.decision) {
+                    case 'AUTHORIZED':
+                        decision = 'Autorizado ✅';
+                        break;
+                    case 'DENIED_NO_COVER':
+                        decision = 'Negado (sem cobertura) ❌';
+                        break;
+                    case 'PENDING_AUDIT_5D':
+                        decision = `Pendente de auditoria (${p.slaDays ?? 5} dias) ⏳`;
+                        break;
+                    case 'PENDING_AUDIT_10D':
+                        decision = `Pendente de auditoria (${p.slaDays ?? 10} dias) ⏳`;
+                        break;
+                    default:
+                        decision = p.decision;
+                }
+                parts.push(`${base}: ${decision}`);
+                if (p.reason) parts.push(`   - Motivo: ${p.reason}`);
+            }
+        }
+        return parts.join('\n');
     }
-  }
 
-  return (
-    <div className="flex flex-col h-full min-h-0 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
-      {/* área de mensagens */}
-      <div className="flex-1 overflow-auto p-4">
-        {messages.length === 0 ? (
-          <div className="flex-1 flex flex-col justify-center items-center h-full">
-            <h1 className="text-4xl font-bold">Como podemos te ajudar hoje?</h1>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {messages.map((m, i) => (
-              <div
-                key={i}
-                className={`flex ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                  {m.text && (
-                    m.sender === 'user' ? (
-                      <div className="w-full max-w-[95%] p-3 rounded-lg break-words bg-green-500 text-white rounded-br-none">
-                        {m.text}
-                      </div>
-                    ) : (
-                      <div className="w-full max-w-[95%] p-3 rounded-lg break-words bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none" dangerouslySetInnerHTML={{ __html: m.text }} />
-                    )
-                  )}
+    async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+                if (!file || loading) return;
+                // show local preview or filename immediately
+                if (file.type.startsWith('image/')) {
+                    const imageUrl = URL.createObjectURL(file);
+                    setMessages(prev => [...prev, { sender: 'user', imageUrl }]);
+                } else {
+                    setMessages(prev => [...prev, { sender: 'user', text: `Arquivo enviado: ${file.name}` }]);
+                }
+        setLoading(true);
+        try {
+            const res = await uploadExam(file);
+            const text = formatAuthorizeResponse(res) || 'Recebi o arquivo e processei as informações.';
+            setMessages(prev => [...prev, { sender: 'bot', text }]);
+        } catch (err) {
+            console.error(err);
+            setMessages(prev => [...prev, { sender: 'bot', text: 'Não consegui processar o arquivo. Tente novamente com uma imagem nítida (PNG, JPG, PDF).' }]);
+        } finally {
+            setLoading(false);
+            // reset input so same file can be reselected if needed
+            e.currentTarget.value = '';
+        }
+    }
 
-                  {m.imageUrl && (
-                    <img
-                      src={m.imageUrl}
-                      alt="Uploaded"
-                      className="max-w-[90%] rounded-lg mt-2"
-                    />
-                  )}
+    const suggestionChips = ["Agendar consulta", "2ª via do boleto", "Resultado de exames"];
 
-                  {m.sender === 'bot' && (
-                    <div className="flex space-x-2 mt-2">
-                      <ThumbsUp className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
-                      <ThumbsDown className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
-                      <RefreshCw className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
-                      <Share2 className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
-                      <Copy className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
-                      <MoreHorizontal className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
-                      <Sparkles className="h-5 w-5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 cursor-pointer" />
+    return (
+        <div className="flex flex-col h-full min-h-0 bg-gray-50 text-gray-800">
+            {/* Área de mensagens */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                {messages.length === 0 && !loading ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                        <div className="bg-green-100 p-4 rounded-full mb-4">
+                            <Bot className="w-12 h-12 text-green-700" />
+                        </div>
+                        <h1 className="text-xl font-bold text-gray-800">Olá! Sou a Ana, sua assistente virtual.</h1>
+                        <p className="text-gray-600 mt-1">Como posso te ajudar hoje?</p>
+                        <div className="flex flex-wrap justify-center gap-2 mt-6">
+                            {suggestionChips.map(chip => (
+                                <button key={chip} onClick={() => handleSuggestionClick(chip)} className="px-4 py-2 bg-white border border-gray-300 rounded-full text-sm text-green-700 hover:bg-green-50 transition-colors">
+                                    {chip}
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                  )}
+                ) : (
+                    messages.map((m, i) => (
+                        <div key={i} className={`flex items-end gap-3 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            {m.sender === 'bot' && <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0"><Bot className="w-5 h-5 text-white" /></div>}
+                            <div className={`flex flex-col w-full max-w-[80%] ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                                <div className={`p-3 rounded-2xl break-words ${m.sender === 'user' ? 'bg-green-600 text-white rounded-br-lg' : 'bg-white text-gray-800 rounded-bl-lg border border-gray-200'}`}>
+                                    {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
+                                    {m.html && (
+                                        <div
+                                            className="prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2"
+                                            dangerouslySetInnerHTML={{ __html: m.html }}
+                                        />
+                                    )}
+                                    {m.imageUrl && <img src={m.imageUrl} alt="Uploaded" className="max-w-full rounded-lg mt-2" />}
+                                </div>
+                                                                {m.sender === 'bot' && (
+                                                                        <div className="flex space-x-2 mt-2 text-gray-400">
+                                                                                <button title="Gostei" className="hover:text-green-600 transition-colors"><ThumbsUp className="h-4 w-4" /></button>
+                                                                                <button title="Não gostei" className="hover:text-red-600 transition-colors"><ThumbsDown className="h-4 w-4" /></button>
+                                                                                <button
+                                                                                    title="Copiar"
+                                                                                    onClick={() => {
+                                                                                        if (m.text) {
+                                                                                            navigator.clipboard.writeText(m.text);
+                                                                                        } else if (m.html) {
+                                                                                            const tmp = document.createElement('div');
+                                                                                            tmp.innerHTML = m.html;
+                                                                                            const plain = tmp.innerText;
+                                                                                            navigator.clipboard.writeText(plain);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="hover:text-blue-600 transition-colors"
+                                                                                >
+                                                                                    <Copy className="h-4 w-4" />
+                                                                                </button>
+                                                                        </div>
+                                                                )}
+                            </div>
+                            {m.sender === 'user' && <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0"><User className="w-5 h-5 text-gray-600" /></div>}
+                        </div>
+                    ))
+                )}
+                {loading && (
+                    <div className="flex items-end gap-3 justify-start">
+                        <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center flex-shrink-0"><Bot className="w-5 h-5 text-white" /></div>
+                        <div className="p-3 rounded-2xl bg-white rounded-bl-lg border border-gray-200">
+                           <div className="flex items-center justify-center gap-1.5">
+                               <span className="h-2 w-2 bg-green-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                               <span className="h-2 w-2 bg-green-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                               <span className="h-2 w-2 bg-green-500 rounded-full animate-bounce"></span>
+                           </div>
+                        </div>
+                    </div>
+                )}
+                <div ref={bottomRef} />
+            </div>
+
+            {/* Input */}
+            <div className="p-4 bg-white border-t border-gray-200">
+                <div className="relative">
+                    <input
+                        id="chat-input"
+                        type="text"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder={loading ? 'Aguarde...' : 'Digite sua mensagem...'}
+                        disabled={loading}
+                        className="w-full py-3 pl-4 pr-24 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-800 transition-shadow"
+                    />
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                         <label className="p-2 text-gray-500 hover:text-green-600 cursor-pointer">
+                            <Paperclip className="h-5 w-5" />
+                            <input type="file" accept="image/*,application/pdf" onChange={handleImageUpload} className="hidden" />
+                        </label>
+                        <button onClick={handleSend} disabled={loading || !input.trim()} className="p-2 bg-green-600 text-white rounded-full hover:bg-green-700 disabled:bg-green-300 disabled:cursor-not-allowed transition-colors" title="Enviar">
+                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" /></svg>
+                        </button>
+                    </div>
                 </div>
-              </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
-        )}
-      </div>
-
-      {/* input */}
-      <div className="p-3 sm:p-4">
-        <div className="relative w-full">
-          <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-full p-2">
-            <label className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer">
-              <Paperclip className="h-6 w-6" />
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-            </label>
-
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={loading ? 'Aguarde...' : 'Digite sua mensagem...'}
-              disabled={loading}
-              className="w-full p-2 bg-transparent focus:outline-none text-gray-900 dark:text-white disabled:opacity-60"
-            />
-
-            <button
-              className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-              type="button"
-              title="Falar (não implementado)"
-            >
-              <Mic className="h-6 w-6" />
-            </button>
-
-            <button
-              onClick={handleSend}
-              disabled={loading || !input.trim()}
-              className="p-2 bg-green-500 text-white rounded-full hover:bg-green-600 disabled:bg-green-300"
-              title="Enviar"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
-            </button>
-          </div>
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 }
