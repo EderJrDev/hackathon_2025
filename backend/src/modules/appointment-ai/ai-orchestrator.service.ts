@@ -2,6 +2,39 @@
 import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
 import { AppointmentsService } from '../appointments/appointments.service';
+import { SPECIALTY_MAPPINGS } from './dto/specialities.dto';
+
+// Helpers de HTML simples para padronizar saída (similar ao QuestionsService)
+function escapeHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function wrapHtml(content: string) {
+  return `\n<section style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;line-height:1.55;color:#0f172a">${content}</section>`;
+}
+
+function paragraph(text: string) {
+  return `<p style="margin:0 0 8px">${text}</p>`;
+}
+
+function small(text: string) {
+  return `<p style="margin:0;font-size:13px;color:#64748b">${text}</p>`;
+}
+
+function numbered(items: string[]) {
+  return `<ol style="margin:4px 0 12px 18px">${items
+    .map((i) => `<li>${i}</li>`)
+    .join('')}</ol>`;
+}
+
+function withExitHint(html: string) {
+  return (
+    html +
+    small(
+      'Digite <strong>sair</strong> a qualquer momento para cancelar o agendamento.',
+    )
+  );
+}
 
 type Msg = OpenAI.ChatCompletionMessageParam;
 
@@ -44,6 +77,88 @@ function formatDateTimeBR(date: Date) {
     timeStyle: 'short',
     timeZone: 'America/Sao_Paulo',
   }).format(date);
+}
+
+// Mapeamento de variações de especialidades
+
+function findSpecialtyFromInput(input: string): string | null {
+  const cleanInput = input.toLowerCase().trim();
+
+  // Busca direta primeiro
+  for (const [specialty, variations] of Object.entries(SPECIALTY_MAPPINGS)) {
+    if (variations.some((variation) => cleanInput.includes(variation))) {
+      return specialty;
+    }
+  }
+
+  // Se não encontrou, tenta extrair palavras-chave médicas
+  const medicalKeywords = [
+    'consulta',
+    'médico',
+    'doutor',
+    'dr',
+    'dra',
+    'especialista',
+    'problema',
+    'dor',
+    'exame',
+    'tratamento',
+    'sintomas',
+  ];
+
+  // Remove palavras comuns e tenta novamente
+  const words = cleanInput
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !medicalKeywords.includes(word));
+
+  for (const word of words) {
+    for (const [specialty, variations] of Object.entries(SPECIALTY_MAPPINGS)) {
+      if (
+        variations.some(
+          (variation) => variation.includes(word) || word.includes(variation),
+        )
+      ) {
+        return specialty;
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractSpecialtyAndReason(input: string): {
+  specialty: string | null;
+  reason: string;
+} {
+  const specialty = findSpecialtyFromInput(input);
+
+  if (!specialty) {
+    return { specialty: null, reason: input.trim() };
+  }
+
+  // Remove a especialidade encontrada do texto para obter o motivo
+  let reason = input.toLowerCase();
+  const specialtyVariations = SPECIALTY_MAPPINGS[specialty] || [];
+
+  for (const variation of specialtyVariations) {
+    reason = reason.replace(new RegExp(`\\b${variation}\\b`, 'gi'), '');
+  }
+
+  // Limpa o motivo removendo palavras vazias e conectores
+  reason = reason
+    .replace(
+      /\b(com|para|de|da|do|em|na|no|por|consulta|médico|doutor|dr|dra|especialista)\b/gi,
+      '',
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Se o motivo ficou muito curto ou vazio, usa o input original
+  if (reason.length < 3) {
+    reason = input.trim();
+  }
+
+  return { specialty, reason };
 }
 
 function tryParsePatientCSV(input: string) {
@@ -94,21 +209,53 @@ export class AiOrchestratorService {
   private sessions = new Map<string, { history: Msg[]; state: SessionState }>();
 
   private sys = `
-Você é um agente de agendamento que segue estritamente este fluxo:
-(1) Peça nome completo, data de nascimento e cidade **neste formato**: "Nome completo, DD/MM/AAAA, Cidade".
-    - Aceite também o formato antigo com rótulos (ex.: "Nome: ...; Nascimento: DD/MM/AAAA; Cidade: ...").
-    - Só avance quando os três forem informados.
-(2) Pergunte a especialidade e o motivo da consulta. Só avance quando ambos forem informados.
-(3) Liste TODOS os médicos dessa especialidade na cidade (lista numerada 1..N, só nome do médico).
-(4) Peça que o usuário escolha o número do médico.
-(5) Liste as datas disponíveis do médico selecionado nos próximos 30 dias (lista numerada 1..N). **Exiba no fuso de São Paulo (America/Sao_Paulo), em pt-BR**.
-(6) Peça que o usuário escolha o número do horário.
-(7) Confirme o agendamento e retorne o protocolo. Encerre o atendimento.
+Você é um agente de agendamento de consultas médicas.
+Siga estritamente este fluxo:
 
-Regras:
+(1) Identificação do paciente
+- Peça nome completo, data de nascimento e cidade neste formato: "Nome completo, DD/MM/AAAA, Cidade".
+- Também aceite o formato antigo com rótulos: "Nome: ...; Nascimento: DD/MM/AAAA; Cidade: ...".
+- Reconheça se o usuário digitar só parte dos dados e peça educadamente o que falta.
+- Só avance quando os três forem informados.
+- Aceite variações comuns (datas com traço ou barra, letras maiúsculas/minúsculas, espaços extras etc.).
+
+(2) Especialidade e motivo da consulta
+- Pergunte a especialidade desejada e o motivo da consulta.
+- Aceite diferentes formas de se referir à especialidade (ex.: "cardiologista", "cardiologia", "médico do coração").
+- O motivo pode ser informado junto (ex.: "cardiologista para dor no peito").
+- Só avance quando pelo menos a especialidade for identificada.
+- Se o motivo não for informado, prossiga assim mesmo.
+
+(3) Lista de médicos disponíveis
+- Liste TODOS os médicos dessa especialidade na cidade.
+- Exiba em lista numerada (1..N) contendo apenas o nome do médico.
+
+(4) Seleção do médico
+- Peça que o usuário escolha o número do médico.
+- Se o usuário digitar o nome do médico em vez do número, aceite também.
+
+(5) Disponibilidade de horários
+- Liste as datas e horários disponíveis do médico selecionado nos próximos 30 dias.
+- Sempre no fuso horário de São Paulo (America/Sao_Paulo).
+- Exiba no formato de data/hora em pt-BR.
+- Exiba em lista numerada (1..N).
+- Se não houver horários, informe claramente: "Não há vagas nos próximos 30 dias." e encerre o atendimento.
+
+(6) Seleção do horário
+- Peça que o usuário escolha o número do horário.
+- Se o usuário responder digitando a data/hora completa, aceite também.
+
+(7) Confirmação
+- Confirme o agendamento com nome, especialidade, médico, data e horário.
+- Retorne um número de protocolo gerado pelo sistema.
+- Encerre o atendimento de forma cordial.
+
+Regras gerais:
 - Nunca invente dados: use apenas as ferramentas disponíveis.
-- Se não houver médicos ou horários, diga claramente que não há e encerre.
-- Respostas objetivas em português do Brasil.
+- Seja flexível e interprete variações de escrita e linguagem natural.
+- Sempre responda de forma objetiva, clara e em português do Brasil.
+- Se faltar informação para seguir o fluxo, peça educadamente o que está faltando.
+- Encerre sempre com uma mensagem simpática, como uma atendente faria.
 `;
 
   private tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -188,6 +335,19 @@ Regras:
     const session = this.getSession(sessionId);
     const { state, history } = session;
 
+    const lower = (userMessage || '').trim().toLowerCase();
+    if (lower === 'sair' && state.step !== 'done') {
+      state.step = 'done';
+      const exitMsg = wrapHtml(
+        paragraph('Agendamento cancelado conforme solicitado.') +
+          small(
+            'Se precisar iniciar novamente, é só mandar uma nova mensagem.',
+          ),
+      );
+      history.push({ role: 'assistant', content: exitMsg });
+      return exitMsg;
+    }
+
     // 1) Coleta/validação dos dados do paciente (novo parser)
     if (state.step === 'collect_patient') {
       if (!state.patientName || !state.patientBirth || !state.city) {
@@ -220,29 +380,58 @@ Regras:
       }
 
       if (!state.patientName || !state.patientBirth || !state.city) {
-        const ask =
-          'Por favor, informe **neste formato**: `Nome completo, DD/MM/AAAA, Cidade`.\nEx.: `Maria Silva, 10/05/1990, Franca`.';
+        const ask = wrapHtml(
+          withExitHint(
+            paragraph(
+              'Por favor, informe os dados no formato: <strong>Nome completo, DD/MM/AAAA, Cidade</strong>.',
+            ) +
+              paragraph(
+                'Exemplo: <code>Maria Silva, 10/05/1990, Franca</code>.',
+              ),
+          ),
+        );
         history.push({ role: 'assistant', content: ask });
         return ask;
       }
 
       state.step = 'collect_specialty_reason';
-      const ask = `Obrigado, ${state.patientName}. Qual a especialidade desejada e o motivo da consulta?`;
+      const ask = wrapHtml(
+        withExitHint(
+          paragraph(
+            `Obrigado, <strong>${escapeHtml(
+              state.patientName,
+            )}</strong>. Qual a especialidade desejada e o motivo da consulta?`,
+          ),
+        ),
+      );
       history.push({ role: 'assistant', content: ask });
       return ask;
     }
 
     // 2) Especialidade + motivo
     if (state.step === 'collect_specialty_reason') {
-      if (!state.specialtyId) {
-        const spec = userMessage.trim();
-        if (spec.length > 1) state.specialtyId = spec.toLowerCase();
+      if (!state.specialtyId || !state.reason) {
+        const extracted = extractSpecialtyAndReason(userMessage);
+
+        if (extracted.specialty) {
+          state.specialtyId = extracted.specialty;
+        }
+
+        if (extracted.reason && extracted.reason.length > 2) {
+          state.reason = extracted.reason;
+        } else if (!state.reason) {
+          state.reason = userMessage.trim();
+        }
       }
-      if (!state.reason) state.reason = userMessage;
 
       if (!state.specialtyId) {
-        const ask =
-          'Qual especialidade? Ex.: cardiologia, ortopedia, ginecologia.';
+        const ask = wrapHtml(
+          withExitHint(
+            paragraph(
+              'Qual especialidade desejada? <span style="font-size:13px;color:#475569">Ex.: cardiologista, ortopedia, gineco, médico do coração, etc.</span>',
+            ),
+          ),
+        );
         history.push({ role: 'assistant', content: ask });
         return ask;
       }
@@ -254,17 +443,25 @@ Regras:
       state.doctors = doctors.map((d) => ({ id: d.id, name: d.name }));
 
       if (!state.doctors.length) {
-        const msg = `Não encontrei médicos de ${state.specialtyId} em ${state.city}. Encerrando.`;
+        const msg = wrapHtml(
+          paragraph(
+            `Não encontrei médicos de <strong>${escapeHtml(
+              state.specialtyId,
+            )}</strong> em <strong>${escapeHtml(state.city!)}</strong>.`,
+          ) + small('Atendimento encerrado.'),
+        );
         history.push({ role: 'assistant', content: msg });
         state.step = 'done';
         return msg;
       }
 
       state.step = 'choose_doctor';
-      const list = state.doctors
-        .map((d, i) => `${i + 1}. ${d.name}`)
-        .join('\n');
-      const ask = `Escolha o médico (digite o número):\n${list}`;
+      const ask = wrapHtml(
+        withExitHint(
+          paragraph('Escolha o médico (digite o número):') +
+            numbered(state.doctors.map((d) => escapeHtml(d.name))),
+        ),
+      );
       history.push({ role: 'assistant', content: ask });
       return ask;
     }
@@ -273,7 +470,16 @@ Regras:
     if (state.step === 'choose_doctor') {
       const idx = this.parseIndex(userMessage, state.doctors!.length);
       if (idx === null) {
-        const ask = `Por favor, digite um número de 1 a ${state.doctors!.length}.`;
+        const listHtml = numbered(
+          state.doctors!.map((d) => escapeHtml(d.name)),
+        );
+        const ask = wrapHtml(
+          withExitHint(
+            paragraph(
+              `Entrada inválida. Escolha um número de 1 a ${state.doctors!.length}:`,
+            ) + listHtml,
+          ),
+        );
         history.push({ role: 'assistant', content: ask });
         return ask;
       }
@@ -291,19 +497,31 @@ Regras:
       }));
 
       if (!state.slots.length) {
-        const msg = `Para ${chosen.name}, não há vagas no período de 30 dias. Deseja tentar outro médico?`;
+        const msg = wrapHtml(
+          withExitHint(
+            paragraph(
+              `Para <strong>${escapeHtml(
+                chosen.name,
+              )}</strong> não há vagas no período de 30 dias. Deseja tentar outro médico?`,
+            ),
+          ),
+        );
         history.push({ role: 'assistant', content: msg });
         return msg;
       }
 
       state.step = 'choose_slot';
-      const list = state.slots
-        .map((s, i) => {
-          const dt = new Date(s.dateISO);
-          return `${i + 1}. ${formatDateTimeBR(dt)}`;
-        })
-        .join('\n');
-      const ask = `Escolha o horário (digite o número):\n${list}`;
+      const ask = wrapHtml(
+        withExitHint(
+          paragraph('Escolha o horário (digite o número):') +
+            numbered(
+              state.slots.map((s) => {
+                const dt = new Date(s.dateISO);
+                return formatDateTimeBR(dt);
+              }),
+            ),
+        ),
+      );
       history.push({ role: 'assistant', content: ask });
       return ask;
     }
@@ -312,7 +530,16 @@ Regras:
     if (state.step === 'choose_slot') {
       const idx = this.parseIndex(userMessage, state.slots!.length);
       if (idx === null) {
-        const ask = `Por favor, digite um número de 1 a ${state.slots!.length}.`;
+        const listHtml = numbered(
+          state.slots!.map((s) => formatDateTimeBR(new Date(s.dateISO))),
+        );
+        const ask = wrapHtml(
+          withExitHint(
+            paragraph(
+              `Entrada inválida. Escolha um número de 1 a ${state.slots!.length}:`,
+            ) + listHtml,
+          ),
+        );
         history.push({ role: 'assistant', content: ask });
         return ask;
       }
@@ -330,13 +557,26 @@ Regras:
       });
 
       state.step = 'done';
-      const msg = `Agendamento confirmado! Protocolo: ${appt.protocol}. Data: ${formatDateTimeBR(new Date(appt.date))}.`;
+      const msg = wrapHtml(
+        paragraph('Agendamento confirmado!') +
+          paragraph(
+            `Protocolo: <strong>${escapeHtml(
+              appt.protocol,
+            )}</strong><br>Data: <strong>${formatDateTimeBR(
+              new Date(appt.date),
+            )}</strong>.`,
+          ) +
+          small('Atendimento encerrado. Obrigado!'),
+      );
       history.push({ role: 'assistant', content: msg });
       return msg;
     }
 
-    const done =
-      'Atendimento encerrado. Se precisar de algo mais, é só chamar.';
+    const done = wrapHtml(
+      paragraph(
+        'Atendimento encerrado. Se precisar de algo mais, é só chamar.',
+      ),
+    );
     history.push({ role: 'assistant', content: done });
     return done;
   }

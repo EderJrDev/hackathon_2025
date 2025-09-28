@@ -210,7 +210,7 @@ export class ExamsAuthService {
       }
 
       // 5) Aplica as regras de decisão
-      if (exam.audit === false && exam.cover === true) {
+      if (exam.audit === false) {
         decisions.push({
           inputName,
           matchedExamId: exam.id,
@@ -218,14 +218,6 @@ export class ExamsAuthService {
           decision: 'AUTHORIZED',
           reason:
             'Coberto pelo plano e sem necessidade de auditoria. Autorizado automaticamente.',
-        });
-      } else if (exam.audit === false && exam.cover === false) {
-        decisions.push({
-          inputName,
-          matchedExamId: exam.id,
-          matchedName: exam.name,
-          decision: 'DENIED_NO_COVER',
-          reason: 'Sem cobertura do plano (cover=false).',
         });
       } else if (exam.audit === true && exam.opme === false) {
         decisions.push({

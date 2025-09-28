@@ -15,7 +15,8 @@ export class AppointmentsService {
     if (!specialtyId || !city)
       throw new BadRequestException('specialtyId e city são obrigatórios');
 
-    return this.prisma.doctor.findMany({
+    // Primeiro tenta busca exata
+    let doctors = await this.prisma.doctor.findMany({
       where: {
         specialtyId,
         city: { equals: city, mode: 'insensitive' },
@@ -29,6 +30,26 @@ export class AppointmentsService {
         specialtyId: true,
       },
     });
+
+    // Se não encontrou, tenta busca mais flexível (case insensitive)
+    if (doctors.length === 0) {
+      doctors = await this.prisma.doctor.findMany({
+        where: {
+          specialtyId: { contains: specialtyId, mode: 'insensitive' },
+          city: { equals: city, mode: 'insensitive' },
+        },
+        orderBy: { name: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          crm: true,
+          city: true,
+          specialtyId: true,
+        },
+      });
+    }
+
+    return doctors;
   }
 
   async listAvailabilityByDoctor(doctorId: string, start?: Date, end?: Date) {
