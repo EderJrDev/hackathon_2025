@@ -8,6 +8,43 @@ export async function startChat(payload: { text: string }) {
   const { data } = await api.post('/chat/questions/ask', payload);
   return data as { reply: string; }
 }
+
+// ====== Exams upload (multipart/form-data) ======
+export type ExamDecision =
+  | 'AUTHORIZED'
+  | 'DENIED_NO_COVER'
+  | 'PENDING_AUDIT_5D'
+  | 'PENDING_AUDIT_10D';
+
+export interface ProcedureDecisionDTO {
+  inputName: string;
+  matchedExamId?: string;
+  matchedName?: string;
+  decision: ExamDecision;
+  reason: string;
+  slaDays?: number;
+}
+
+export interface AuthorizeResponseDTO {
+  patient?: { name?: string; birthDate?: string; docDate?: string };
+  procedures: ProcedureDecisionDTO[];
+  source: 'gpt-json+db';
+}
+
+export async function uploadExam(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  const { data } = await api.post('/chat/exams', form, {
+    // Axios will set the correct Content-Type with boundary for FormData automatically.
+  });
+  return data as AuthorizeResponseDTO;
+}
+
+// ====== Appointment chat orchestration ======
+export async function startAppointment(payload: { sessionId: string; message: string }) {
+  const { data } = await api.post('/chat/appointment', payload);
+  return data as { reply: string };
+}
 export async function sendMessage(sessionId: string, message: string) {
   const { data } = await api.post('/chat/message', { sessionId, message });
   return data as { reply: string; nameCaptured: string | null; dobCaptured: string | null };
