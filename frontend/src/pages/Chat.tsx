@@ -1,5 +1,16 @@
 import { useState, useRef, useEffect } from "react";
-import { Paperclip, ThumbsUp, ThumbsDown, Copy, Bot, User } from "lucide-react";
+import {
+  Paperclip,
+  ThumbsUp,
+  ThumbsDown,
+  Copy,
+  Bot,
+  User,
+  Mic,
+  Square,
+  Plus,
+  Minus,
+} from "lucide-react";
 
 import {
   startChat,
@@ -27,9 +38,14 @@ export default function Chat() {
   const [appointmentSessionId, setAppointmentSessionId] = useState<
     string | null
   >(null);
+  const [fontScale, setFontScale] = useState<number>(
+    () => Number(localStorage.getItem("chat:fontScale")) || 100
+  );
+  const [isRecording, setIsRecording] = useState<boolean>(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -44,7 +60,216 @@ export default function Chat() {
     }
   }, [loadingAsk, loadingUpload, messages.length]);
 
+  // Persist font scale changes
+  useEffect(() => {
+    localStorage.setItem("chat:fontScale", String(fontScale));
+  }, [fontScale]);
+
+  // Voice recognition helpers
+  function startRecording() {
+    if (loading) return; // avoid conflicts during requests
+    const SR =
+      (window as any).webkitSpeechRecognition ||
+      (window as any).SpeechRecognition;
+    if (!SR) {
+      // Fallback message if not supported
+      setMessages((prev) => [
+        ...prev,
+        {
+          sender: "bot",
+          text:
+            "Seu navegador não suporta ditado por voz. Use o teclado para digitar sua mensagem.",
+        },
+      ]);
+      return;
+    }
+    const recog = new SR();
+    recog.lang = "pt-BR";
+    recog.interimResults = true;
+    recog.continuous = false;
+    recog.onresult = (event: any) => {
+      let interim = "";
+      let final = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) final += transcript + " ";
+        else interim += transcript + " ";
+      }
+      if (final) {
+        setInput((prev) => (prev ? prev + " " : "") + final.trim());
+      } else if (interim) {
+        // show interim transcript appended (non-destructive)
+        setInput((prev) => {
+          const base = prev.replace(/\s*\(falando\.{3}.*\)$/u, "").trim();
+          return `${base}`;
+        });
+      }
+    };
+    recog.onerror = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+    };
+    recog.onend = () => {
+      setIsRecording(false);
+      recognitionRef.current = null;
+      // Remove any interim marker "(falando...)" e enviar automaticamente
+      let cleaned = "";
+      setInput((prev) => {
+        cleaned = prev.replace(/\s*\(falando\.{3}.*\)$/u, "").trim();
+        return cleaned;
+      });
+      // Aguarda a atualização do estado antes de enviar
+      setTimeout(() => {
+        if (cleaned && !loading) {
+          handleSend();
+        }
+      }, 50);
+    };
+    try {
+      recognitionRef.current = recog;
+      setIsRecording(true);
+      recog.start();
+    } catch (_) {
+      setIsRecording(false);
+      recognitionRef.current = null;
+    }
+  }
+
+  function stopRecording() {
+    try {
+      recognitionRef.current?.stop?.();
+    } finally {
+      setIsRecording(false);
+    }
+  }
+
+  function toggleRecording() {
+    if (isRecording) stopRecording();
+    else startRecording();
+  }
+
+  function increaseFont() {
+    setFontScale((s) => Math.min(150, s + 10));
+  }
+  function decreaseFont() {
+    setFontScale((s) => Math.max(90, s - 10));
+  }
+
   // Front não classifica mais; delega ao /ask e reage à diretiva
+
+  // Escapa conteúdo de texto para HTML seguro
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Converte respostas em texto simples em HTML com parágrafos e lista após
+  // o marcador "Mas posso orientar com:" quando presente
+  function normalizeAskHtml(input: string): string {
+    if (!input) return "<p>...</p>";
+    // Se já parece HTML, retorna como está
+    if (/<[a-z][\s\S]*>/i.test(input)) return input;
+
+    const rawLines = input.split(/\r?\n/).map((l) => l.trim());
+    const lines = rawLines.filter((l, idx) => !(l === "" && rawLines[idx - 1] === ""));
+
+    const idxOrient = lines.findIndex((l) => l.toLowerCase().includes("mas posso orientar"));
+    const out: string[] = [];
+
+    function pushParagraphBlock(block: string[]) {
+      const text = block.join(" ").trim();
+      if (text) out.push(`<p>${escapeHtml(text)}</p>`);
+    }
+
+    if (idxOrient >= 0) {
+      // Parte anterior ao marcador -> parágrafo(s)
+      const before = lines.slice(0, idxOrient + 1); // mantém a frase do marcador no parágrafo anterior
+      pushParagraphBlock(before);
+
+      // Itens de lista após o marcador até quebra lógica
+      let j = idxOrient + 1;
+      const lis: string[] = [];
+      while (
+        j < lines.length &&
+        lines[j] !== "" &&
+        !/^pode\b/i.test(lines[j]) &&
+        !/[.!?]$/.test(lines[j])
+      ) {
+        lis.push(`<li>${escapeHtml(lines[j])}</li>`);
+        j++;
+      }
+      if (lis.length) out.push(`<ul class="list-disc pl-6">${lis.join("")}</ul>`);
+
+      // Restante -> parágrafos por blocos separados por linha em branco
+      let k = j;
+      let buffer: string[] = [];
+      for (; k < lines.length; k++) {
+        const l = lines[k];
+        if (l === "") {
+          pushParagraphBlock(buffer);
+          buffer = [];
+        } else {
+          buffer.push(l);
+        }
+      }
+      pushParagraphBlock(buffer);
+    } else {
+      // Sem marcador: converte blocos separados por linha em branco em parágrafos
+      let buffer: string[] = [];
+      for (const l of lines) {
+        if (l === "") {
+          pushParagraphBlock(buffer);
+          buffer = [];
+        } else {
+          buffer.push(l);
+        }
+      }
+      pushParagraphBlock(buffer);
+    }
+
+    return out.join("");
+  }
+
+  // Evita duplicação de números em listas ordenadas quando o conteúdo já inclui "1.", "2.", etc.
+  function cleanDuplicateListNumbers(html: string): string {
+    if (!html) return html;
+    try {
+      // Apenas em ambiente de navegador
+      if (typeof DOMParser === "undefined") return html;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const ols = Array.from(doc.querySelectorAll("ol"));
+      for (const ol of ols) {
+        const lis = Array.from(ol.querySelectorAll(":scope > li"));
+        if (!lis.length) continue;
+        let withNumberPrefix = 0;
+        for (const li of lis) {
+          const text = (li.textContent || "").trim();
+          if (/^\d+([.)]|º)?\s+/.test(text)) withNumberPrefix++;
+        }
+        // Se a maioria dos itens já começa com número no texto, ocultamos o marcador do OL
+        if (withNumberPrefix >= Math.ceil(lis.length * 0.8)) {
+          const style = ol.getAttribute("style") || "";
+          const needsSemicolon = style && !style.trim().endsWith(";");
+          const newStyle = `${style}${needsSemicolon ? ";" : ""}list-style: none; padding-left: 1rem;`;
+          ol.setAttribute("style", newStyle);
+        }
+      }
+      return doc.body.innerHTML;
+    } catch {
+      return html;
+    }
+  }
+
+  function sanitizeHtmlOutput(html: string): string {
+    if (!html) return html;
+    // Podem ser aplicadas outras sanitizações aqui no futuro
+    return cleanDuplicateListNumbers(html);
+  }
 
   function ensureAppointmentSession(): string {
     if (appointmentSessionId) return appointmentSessionId;
@@ -82,8 +307,9 @@ export default function Chat() {
           sessionId: appointmentSessionId,
           message: text,
         });
-        const reply = res.reply || "...";
-        setMessages((prev) => [...prev, { sender: "bot", html: reply }]);
+  const reply = res.reply || "...";
+  const sanitized = sanitizeHtmlOutput(reply);
+  setMessages((prev) => [...prev, { sender: "bot", html: sanitized }]);
         // End flow if backend signaled closure
         if (isAppointmentClosed(reply)) {
           setAppointmentActive(false);
@@ -99,7 +325,8 @@ export default function Chat() {
           setAppointmentActive(true);
           const appRes = await startAppointment({ sessionId, message: text });
           const reply = appRes.reply || "...";
-          setMessages((prev) => [...prev, { sender: "bot", html: reply }]);
+          const sanitized = sanitizeHtmlOutput(reply);
+          setMessages((prev) => [...prev, { sender: "bot", html: sanitized }]);
           if (isAppointmentClosed(reply)) {
             setAppointmentActive(false);
             setAppointmentSessionId(null);
@@ -119,16 +346,10 @@ export default function Chat() {
           return;
         }
       } else {
-        const suggestion = `
-                    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;color:#4b5563;font-size:0.9em;">
-                      <strong>Quer agendar uma consulta?</strong> Você pode digitar: <em>Agendar consulta</em>.
-                    </div>
-                `;
-        const htmlWithSuggestion = (askRes.html || "<p>...</p>");
-        setMessages((prev) => [
-          ...prev,
-          { sender: "bot", html: htmlWithSuggestion },
-        ]);
+  const htmlNormalized = normalizeAskHtml(askRes.html || "");
+  const sanitized = sanitizeHtmlOutput(htmlNormalized);
+  console.log('htmlNormalized', sanitized)
+  setMessages((prev) => [...prev, { sender: "bot", html: sanitized }]);
       }
     } catch (err) {
       console.error(err);
@@ -150,6 +371,7 @@ export default function Chat() {
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       e.preventDefault();
+      if (isRecording) stopRecording();
       handleSend();
     }
   }
@@ -240,9 +462,38 @@ export default function Chat() {
   ];
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-gray-50 text-gray-800">
+    <div
+      className="flex flex-col h-full min-h-0 bg-gray-50 text-gray-800"
+      style={{ fontSize: `${fontScale}%` }}
+    >
       {/* Área de mensagens */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        {/* Acessibilidade: controles de fonte */}
+        <div className="sticky top-0 z-10 flex justify-end gap-2 mb-1">
+          <div className="bg-white/80 backdrop-blur border border-gray-200 rounded-full px-2 py-1 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={decreaseFont}
+              aria-label="Diminuir tamanho da fonte"
+              className="p-1 text-gray-600 hover:text-green-700"
+              title="Diminuir fonte"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+            <span className="text-xs text-gray-600 tabular-nums" aria-live="polite">
+              {fontScale}%
+            </span>
+            <button
+              type="button"
+              onClick={increaseFont}
+              aria-label="Aumentar tamanho da fonte"
+              className="p-1 text-gray-600 hover:text-green-700"
+              title="Aumentar fonte"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         {messages.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="bg-green-100 p-4 rounded-full mb-4">
@@ -374,11 +625,15 @@ export default function Chat() {
             onKeyDown={handleKeyDown}
             placeholder={loading ? "Aguarde..." : "Digite sua mensagem..."}
             disabled={loading}
-            className="w-full py-3 pl-4 pr-24 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-800 transition-shadow"
+            className="w-full py-3 pl-4 pr-40 bg-gray-100 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-800 transition-shadow"
             autoFocus
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-            <label className="p-2 text-gray-500 hover:text-green-600 cursor-pointer">
+            <label
+              className="p-2 text-gray-500 hover:text-green-600 cursor-pointer"
+              aria-label="Anexar arquivo"
+              title="Anexar arquivo"
+            >
               <Paperclip className="h-5 w-5" />
               <input
                 ref={fileInputRef}
@@ -388,6 +643,25 @@ export default function Chat() {
                 className="hidden"
               />
             </label>
+            <button
+              type="button"
+              onClick={toggleRecording}
+              disabled={loading}
+              aria-pressed={isRecording}
+              aria-label={isRecording ? "Parar gravação" : "Iniciar gravação por voz"}
+              title={isRecording ? "Parar gravação" : "Falar"}
+              className={`p-2 rounded-full transition-colors ${
+                isRecording
+                  ? "bg-red-100 text-red-700 hover:bg-red-200"
+                  : "text-gray-500 hover:text-green-600"
+              }`}
+            >
+              {isRecording ? (
+                <Square className="h-5 w-5" />
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
+            </button>
             <button
               onClick={handleSend}
               disabled={loading || !input.trim()}
