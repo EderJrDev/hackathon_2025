@@ -11,7 +11,13 @@ export class FlowsKnowledgeService {
   constructor() {
     const filePath =
       process.env.FLOWS_FILE ||
-      join(process.cwd(), 'src', 'modules', 'questions-ai', 'flows.knowledge.json');
+      join(
+        process.cwd(),
+        'src',
+        'modules',
+        'questions-ai',
+        'flows.knowledge.json',
+      );
     this.logger.log(`Carregando base de fluxos: ${filePath}`);
     const raw = readFileSync(filePath, 'utf-8');
     this.data = JSON.parse(raw);
@@ -51,7 +57,8 @@ export class FlowsKnowledgeService {
       );
       for (const k of intents) {
         if (!k) continue;
-        if (text.includes(k)) score += Math.min(3, Math.ceil(k.split(' ').length / 2));
+        if (text.includes(k))
+          score += Math.min(3, Math.ceil(k.split(' ').length / 2));
       }
 
       // 2) patterns (regex)
