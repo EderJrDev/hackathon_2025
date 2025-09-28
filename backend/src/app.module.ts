@@ -10,6 +10,7 @@ import { AppointmentsAiModule } from './modules/appointment-ai/ai-orchestrator.m
 
 import { UsersModule } from './modules';
 import { QuestionsAiModule } from './modules/questions-ai/questions-ai.module';
+import { ExamsAuthModule } from './modules/exams/exams.module';
 
 @Module({
   imports: [
@@ -29,6 +30,10 @@ import { QuestionsAiModule } from './modules/questions-ai/questions-ai.module';
         module: AppointmentsAiModule,
       },
       {
+        path: 'chat/exams',
+        module: ExamsAuthModule,
+      },
+      {
         path: 'chat/questions',
         module: QuestionsAiModule,
       },
@@ -37,6 +42,7 @@ import { QuestionsAiModule } from './modules/questions-ai/questions-ai.module';
     AuthModule,
     UsersModule,
     AppointmentsAiModule,
+    ExamsAuthModule,
     QuestionsAiModule,
   ],
   controllers: [],

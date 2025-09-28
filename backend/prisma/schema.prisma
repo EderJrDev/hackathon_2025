@@ -85,3 +85,17 @@ enum AppointmentStatus {
   COMPLETED
   NO_SHOW
 }
+
+model Exam {
+  id          String    @id @default(cuid())
+  name        String
+  audit       Boolean   @default(false)
+  opme        Boolean   @default(false)
+  cover      Boolean   @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([name])
+  @@map("exams")
+}
