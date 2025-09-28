@@ -18,7 +18,7 @@ type Sender = 'user' | 'bot';
 
 interface UiMessage {
   sender: Sender;
-  text?: string;
+  text?: string; // plain text (user) or raw HTML (bot)
   imageUrl?: string;
 }
 
@@ -41,9 +41,9 @@ export default function Chat() {
     setInput('');
     setLoading(true);
     try {
-      // Backend só precisa do texto
-      const res = await startChat({ text });
-      setMessages(prev => [...prev, { sender: 'bot', text: res.reply || '...' }]);
+  // Backend espera { message }
+  const res = await startChat({ message: text });
+  setMessages(prev => [...prev, { sender: 'bot', text: res.html || '...' }]);
     } catch (err) {
       console.error(err);
       setMessages(prev => [...prev, { sender: 'bot', text: 'Erro ao responder.' }]);
@@ -85,15 +85,13 @@ export default function Chat() {
               >
                 <div className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
                   {m.text && (
-                    <div
-                      className={`w-full max-w-[95%] p-3 rounded-lg break-words ${
-                        m.sender === 'user'
-                          ? 'bg-green-500 text-white rounded-br-none'
-                          : 'bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none'
-                      }`}
-                    >
-                      {m.text}
-                    </div>
+                    m.sender === 'user' ? (
+                      <div className="w-full max-w-[95%] p-3 rounded-lg break-words bg-green-500 text-white rounded-br-none">
+                        {m.text}
+                      </div>
+                    ) : (
+                      <div className="w-full max-w-[95%] p-3 rounded-lg break-words bg-gray-200 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-none" dangerouslySetInnerHTML={{ __html: m.text }} />
+                    )
                   )}
 
                   {m.imageUrl && (

@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import type OpenAI from 'openai';
-import { OPENAI_PROVIDER } from './questions.module';
+import { OPENAI_PROVIDER } from './openai.provider';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
