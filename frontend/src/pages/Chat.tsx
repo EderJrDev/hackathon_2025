@@ -124,7 +124,7 @@ export default function Chat() {
                       <strong>Quer agendar uma consulta?</strong> Você pode digitar: <em>Agendar consulta</em>.
                     </div>
                 `;
-        const htmlWithSuggestion = (askRes.html || "<p>...</p>") + suggestion;
+        const htmlWithSuggestion = (askRes.html || "<p>...</p>");
         setMessages((prev) => [
           ...prev,
           { sender: "bot", html: htmlWithSuggestion },
@@ -236,7 +236,7 @@ export default function Chat() {
   const suggestionChips = [
     "Agendar consulta",
     "2ª via do boleto",
-    "Resultado de exames",
+    "Autorizar de exames",
   ];
 
   return (

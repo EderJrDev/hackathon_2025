@@ -6,6 +6,7 @@ import hero1 from './assets/Hero-1.jpg';
 import hero2 from './assets/Hero-2.jpg';
 import hero3 from './assets/Hero-3.jpg';
 import familia from './assets/familia.jpg';
+import logoUnimed from './assets/logo-unimed.png';
 
 const Phone: FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
@@ -79,13 +80,7 @@ const Navigation = () => (
     <div className="container mx-auto px-4 flex justify-between items-center h-20">
       <div className="flex items-center">
         <a href="#" className="mr-6">
-          {/* Substitua o span abaixo pela sua tag de imagem:
             <img src={logoUnimed} alt="Unimed Franca" className="h-10" />
-           */}
-           <div className="flex items-baseline">
-             <span className="text-3xl font-bold text-green-700">Unimed</span>
-             <span className="text-base font-light text-blue-600 ml-1">Franca</span>
-           </div>
         </a>
         <div className="hidden lg:flex items-center gap-8 text-gray-700 font-medium">
           <a href="#" className="hover:text-green-600">A Unimed Franca</a>
@@ -103,11 +98,9 @@ const Navigation = () => (
 );
 
 const HeroSection = () => {
-  // Use imports so Vite resolves and bundles the assets correctly
   const slides = [hero1, hero2, hero3];
   const [index, setIndex] = useState(0);
 
-  // Auto play com loop infinito
   useEffect(() => {
     const id = setInterval(() => {
       setIndex((i) => (i + 1) % slides.length);
@@ -116,37 +109,43 @@ const HeroSection = () => {
   }, [slides.length]);
 
   return (
-    <section className="relative text-white overflow-hidden">
-      {/* Trilho do carrossel */}
-      <div className="relative h-[520px] md:h-[640px] overflow-hidden">
+    <section className="relative bg-gray-900"> {/* Fundo escuro para o caso de a imagem demorar a carregar */}
+      {/* CORREÇÃO: A altura do carrossel foi ajustada para ser mais responsiva usando unidades de viewport (vh)
+        e a imagem foi configurada para 'object-cover', fazendo-a preencher todo o espaço.
+      */}
+      <div className="relative h-[60vh] md:h-[80vh] max-h-[750px] overflow-hidden">
+        {/* Trilho do carrossel */}
         <div
           className="absolute inset-0 flex transition-transform duration-700 ease-in-out"
           style={{ transform: `translateX(-${index * 100}%)`, willChange: 'transform' }}
         >
           {slides.map((src, i) => (
-            <div key={src} className="relative w-full h-full flex-none flex items-center justify-center">
+            <div key={src} className="relative w-full flex-shrink-0">
               <img
-              src={src}
-              alt={`Slide ${i + 1}`}
-              className="max-w-full max-h-full object-contain"
-              style={{ position: 'relative', inset: 'unset', width: 'auto', height: 'auto' }}
+                src={src}
+                alt={`Slide ${i + 1}`}
+                // A MUDANÇA PRINCIPAL: 'object-cover' faz a imagem preencher o contêiner, eliminando espaços em branco.
+                className="w-full h-full object-cover"
               />
             </div>
           ))}
         </div>
-    </div>
+      </div>
 
-      {/* Indicadores (sincronizados com o slide) */}
-      <div className="relative z-30">
+      {/* CORREÇÃO: Os indicadores de slide foram posicionados sobre a imagem para um visual mais limpo
+        e para não ocuparem espaço vertical extra.
+      */}
+      <div className="absolute z-10 bottom-6 left-0 right-0">
         <div className="container mx-auto px-4">
-          <div className="flex justify-center mt-6 space-x-2">
+          <div className="flex justify-center space-x-2">
             {slides.map((_, i) => (
-              <div
+              <button
                 key={i}
-                className={[
-                  'h-1.5 rounded-full transition-all duration-300',
-                  index === i ? 'w-10 bg-white' : 'w-8 bg-white/50'
-                ].join(' ')}
+                onClick={() => setIndex(i)}
+                aria-label={`Ir para o slide ${i + 1}`}
+                className={`h-1.5 rounded-full transition-all duration-300 ${
+                  index === i ? 'w-10 bg-white' : 'w-8 bg-white/50 hover:bg-white/75'
+                }`}
               />
             ))}
           </div>
@@ -157,10 +156,13 @@ const HeroSection = () => {
 };
 
 const InsuranceBanner = () => (
-    <div className="bg-gray-50 py-12">
-      <img src={familia} alt="" />
+    // CORREÇÃO: O padding vertical (py-12) foi removido do contêiner para eliminar o espaço em branco.
+    <div className="bg-gray-50">
+        {/* As classes w-full e h-auto garantem que a imagem ocupe toda a largura, mantendo sua proporção. */}
+       <img src={familia} alt="Família feliz sorrindo, representando os planos de saúde Unimed" className="w-full h-auto" />
    </div>
 );
+
 
 // --- NOVA SEÇÃO DE ACESSO RÁPIDO ---
 const QuickAccess = () => {
@@ -301,25 +303,19 @@ const App: FC = () => {
         <div className="fixed inset-0 z-50 pointer-events-none flex items-end justify-end">
           {/* Overlay suave quando maximizado (apenas visual, sem bloquear cliques) */}
           <div
-            className={[
-              'absolute inset-0 bg-black transition-opacity duration-300',
+            className={`absolute inset-0 bg-black transition-opacity duration-300 ${
               isChatMaximized ? 'opacity-30' : 'opacity-0'
-            ].join(' ')}
+            }`}
             aria-hidden
           />
 
           {/* Painel do chat */}
           <div
-            className={[
-              'pointer-events-auto flex flex-col border border-gray-200 bg-white shadow-2xl overflow-hidden',
-              'transition-all duration-300 ease-in-out transform-gpu',
-              // Raio varia suavemente para dar sensação de fluidez
-              isChatMaximized ? 'rounded-2xl' : 'rounded-xl',
-              // Tamanhos e margens numéricas para permitir animação suave
+            className={`pointer-events-auto flex flex-col border border-gray-200 bg-white shadow-2xl overflow-hidden transition-all duration-300 ease-in-out transform-gpu ${
               isChatMaximized
-                ? 'w-[calc(100%-2rem)] h-[calc(100%-2rem)] md:w-[calc(100%-4rem)] md:h-[calc(100%-4rem)] m-4 md:m-8'
-                : 'w-[calc(100%-2.5rem)] md:w-96 h-[70%] mr-5 mb-5 md:mr-8 md:mb-8'
-            ].join(' ')}
+                ? 'rounded-2xl w-[calc(100%-2rem)] h-[calc(100%-2rem)] md:w-[calc(100%-4rem)] md:h-[calc(100%-4rem)] m-4 md:m-8'
+                : 'rounded-xl w-[calc(100%-2.5rem)] md:w-96 h-[70%] mr-5 mb-5 md:mr-8 md:mb-8'
+            }`}
             style={{ willChange: 'width, height, margin, border-radius' } as React.CSSProperties}
           >
             <div className="flex items-center justify-between gap-3 p-3 md:p-4 bg-green-600 text-white flex-shrink-0">
@@ -340,7 +336,7 @@ const App: FC = () => {
                 <button
                   aria-label="Fechar"
                   title="Fechar"
-                  className="text-white hover:text-gray-200 text-2xl font-bold leading-none"
+                  className="p-1.5 rounded hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40"
                   onClick={() => {
                     setIsChatOpen(false);
                     setIsChatMaximized(false);
@@ -361,4 +357,3 @@ const App: FC = () => {
 };
 
 export default App;
-
