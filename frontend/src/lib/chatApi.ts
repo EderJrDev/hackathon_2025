@@ -1,21 +1,23 @@
-import axios from 'axios';
+import axios from "axios";
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 export const api = axios.create({ baseURL: BASE_URL });
 
 // /ask agora pode responder HTML ou uma diretiva de rota
-export type AskResponse = { html: string } | { route: 'appointment' | 'exams'; reason?: string };
+export type AskResponse =
+  | { html: string }
+  | { route: "appointment" | "exams"; reason?: string };
 export async function startChat(payload: { message: string }) {
-  const { data } = await api.post('/chat/questions/ask', payload);
+  const { data } = await api.post("/chat/questions/ask", payload);
   return data as AskResponse;
 }
 
 // ====== Exams upload (multipart/form-data) ======
 export type ExamDecision =
-  | 'AUTHORIZED'
-  | 'DENIED_NO_COVER'
-  | 'PENDING_AUDIT_5D'
-  | 'PENDING_AUDIT_10D';
+  | "AUTHORIZED"
+  | "DENIED_NO_COVER"
+  | "PENDING_AUDIT_5D"
+  | "PENDING_AUDIT_10D";
 
 export interface ProcedureDecisionDTO {
   inputName: string;
@@ -29,31 +31,39 @@ export interface ProcedureDecisionDTO {
 export interface AuthorizeResponseDTO {
   patient?: { name?: string; birthDate?: string; docDate?: string };
   procedures: ProcedureDecisionDTO[];
-  source: 'gpt-json+db';
+  source: "gpt-json+db";
+  protocolBatch: string;
 }
 
 export async function uploadExam(file: File) {
   const form = new FormData();
-  form.append('file', file);
-  const { data } = await api.post('/chat/exams', form, {
+  form.append("file", file);
+  const { data } = await api.post("/chat/exams", form, {
     // Axios will set the correct Content-Type with boundary for FormData automatically.
   });
   return data as AuthorizeResponseDTO;
 }
 
 // ====== Appointment chat orchestration ======
-export async function startAppointment(payload: { sessionId: string; message: string }) {
-  const { data } = await api.post('/chat/appointment', payload);
+export async function startAppointment(payload: {
+  sessionId: string;
+  message: string;
+}) {
+  const { data } = await api.post("/chat/appointment", payload);
   return data as { reply: string };
 }
 export async function sendMessage(sessionId: string, message: string) {
-  const { data } = await api.post('/chat/message', { sessionId, message });
-  return data as { reply: string; nameCaptured: string | null; dobCaptured: string | null };
+  const { data } = await api.post("/chat/message", { sessionId, message });
+  return data as {
+    reply: string;
+    nameCaptured: string | null;
+    dobCaptured: string | null;
+  };
 }
 export async function getHistory(sessionId: string) {
   const { data } = await api.get(`/chat/${sessionId}/history`);
   return data as {
     session: { id: string; name: string | null; dob: string | null };
-    messages: { role: 'user' | 'assistant' | 'system'; content: string }[];
+    messages: { role: "user" | "assistant" | "system"; content: string }[];
   };
 }
