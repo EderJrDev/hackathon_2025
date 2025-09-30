@@ -12,6 +12,16 @@ Arquitetura full‑stack:
 - Frontend: React + Vite (Tailwind) com chat UI e suporte a voz, upload de arquivos e roteamento inteligente
 
 
+## Preview
+
+<p align="center">
+	<img src="frontend/src/assets/print.png" alt="Print da aplicação" />
+	<br/>
+	<em>Visual do projeto em execução</em>
+  
+</p>
+
+
 ## Visão geral do produto
 
 - Chat de orientação: o usuário faz perguntas em linguagem natural. O backend reconhece intenções e responde em HTML padronizado com passos e observações. Exemplos de fluxos: Agendar Consulta, Segunda via de Boleto, Troca de Titularidade, Solicitar Autorização de Exames, Atualização Cadastral. Os fluxos ficam em `backend/src/modules/questions-ai/flows.knowledge.json` e podem ser editados sem recompilar (o build copia o JSON para `dist`).
