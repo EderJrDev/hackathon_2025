@@ -3,7 +3,6 @@ import axios from "axios";
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 export const api = axios.create({ baseURL: BASE_URL });
 
-// /ask agora pode responder HTML ou uma diretiva de rota
 export type AskResponse =
   | { html: string }
   | { route: "appointment" | "exams"; reason?: string };
@@ -12,7 +11,6 @@ export async function startChat(payload: { message: string }) {
   return data as AskResponse;
 }
 
-// ====== Exams upload (multipart/form-data) ======
 export type ExamDecision =
   | "AUTHORIZED"
   | "DENIED_NO_COVER"
@@ -39,12 +37,10 @@ export async function uploadExam(file: File) {
   const form = new FormData();
   form.append("file", file);
   const { data } = await api.post("/chat/exams", form, {
-    // Axios will set the correct Content-Type with boundary for FormData automatically.
   });
   return data as AuthorizeResponseDTO;
 }
 
-// ====== Appointment chat orchestration ======
 export async function startAppointment(payload: {
   sessionId: string;
   message: string;
